@@ -1,0 +1,6 @@
+.venv
+data*/
+*.png
+*.csv
+.idea
+*.exr
