@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "Cython"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bluemap"
+version = "1.0.0a1.dev1"
+
+[tool.setuptools]
+packages = ["bluemap"]
+ext-modules = [
+  {name = "bluemap.wrapper", sources = ["bluemap/wrapper.pyx", "cpp/functions.cpp"], include-dirs = ["cpp"], language = "c++"}
+]
+
+[project.scripts]
+bluemap = "bluemap.main:main"

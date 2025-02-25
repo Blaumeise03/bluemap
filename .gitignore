@@ -1,6 +1,20 @@
+
+# IDE and dev files
 .venv
+.idea
+
+# Build results
+/bluemap/**/*.pyd
+/bluemap/**/*.cpp
+build/
+dist/
+__pycache__/
+*.egg-info/
+
+# Output files of the program
 data*/
+out/
+
 *.png
 *.csv
-.idea
 *.exr
