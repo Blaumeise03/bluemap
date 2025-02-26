@@ -10,17 +10,11 @@ Color Color::with_alpha(uint8_t alpha) const {
     return {red, green, blue, alpha};
 }
 
-Image::Image(unsigned int width, unsigned int height) {
+Image::Image(const unsigned int width, const unsigned int height) {
     this->width = width;
     this->height = height;
     this->data = new uint8_t[width * height * 4]; // Allocate memory for RGBA
-    // Fill image with black
-    for (unsigned int i = 0; i < width * height; i++) {
-        data[i * 4 + 0] = 0;
-        data[i * 4 + 1] = 0;
-        data[i * 4 + 2] = 0;
-        data[i * 4 + 3] = 255;
-    }
+    std::fill_n(data, width * height * 4, 0);
 }
 
 Image::~Image() {
@@ -43,7 +37,7 @@ void Image::set_pixel(const unsigned int x, const unsigned int y, const uint8_t 
     data[(y * width + x) * 4 + 3] = a;
 }
 
-void Image::set_pixel(unsigned int x, unsigned int y, const Color &color) const {
+void Image::set_pixel(const unsigned int x, const unsigned int y, const Color &color) const {
     if (x >= width || y >= height) {
         throw std::out_of_range("Pixel out of bounds");
     }
@@ -53,7 +47,7 @@ void Image::set_pixel(unsigned int x, unsigned int y, const Color &color) const 
     data[(y * width + x) * 4 + 3] = color.alpha;
 }
 
-void Image::set_pixel_unsafe(unsigned int x, unsigned int y, const uint8_t *pixel) const {
+void Image::set_pixel_unsafe(const unsigned int x, const unsigned int y, const uint8_t *pixel) const {
     data[(y * width + x) * 4 + 0] = pixel[0];
     data[(y * width + x) * 4 + 1] = pixel[1];
     data[(y * width + x) * 4 + 2] = pixel[2];
@@ -64,7 +58,7 @@ void Image::reset() const {
     std::fill_n(data, width * height * 4, 0);
 }
 
-Color Image::get_pixel(unsigned int x, unsigned int y) const {
+Color Image::get_pixel(const unsigned int x, const unsigned int y) const {
     if (x >= width || y >= height) {
         throw std::out_of_range("Pixel out of bounds");
     }
@@ -76,7 +70,7 @@ Color Image::get_pixel(unsigned int x, unsigned int y) const {
     };
 }
 
-const uint8_t *Image::get_pixel_unsafe(unsigned int x, unsigned int y) const {
+const uint8_t *Image::get_pixel_unsafe(const unsigned int x, const unsigned int y) const {
     return &data[(y * width + x) * 4];
 }
 

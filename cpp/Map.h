@@ -136,6 +136,15 @@ namespace bluemap {
 
             [[nodiscard]] std::tuple<Owner *, double> calculate_influence(unsigned int x, unsigned int y) const;
 
+            void process_pixel(
+                unsigned int width,
+                unsigned int i,
+                unsigned int y,
+                std::vector<Owner *> &this_row,
+                const std::vector<Owner *> &prev_row,
+                std::vector<double> &prev_influence,
+                std::vector<bool> &border) const;
+
             void render();
         };
 
@@ -150,6 +159,8 @@ namespace bluemap {
         void render();
 
         void render_multithreaded();
+
+        ColumnWorker* create_worker(unsigned int start_x, unsigned int end_x);
 
         void paste_cache(unsigned int start_x, unsigned int start_y, const Image &cache, int height = -1);
 

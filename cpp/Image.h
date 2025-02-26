@@ -21,7 +21,7 @@ struct Color {
           alpha(alpha) {
     }
 
-    Color with_alpha(uint8_t alpha) const;
+    [[nodiscard]] Color with_alpha(uint8_t alpha) const;
 };
 
 class Image {

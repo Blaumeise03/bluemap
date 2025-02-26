@@ -169,6 +169,46 @@ namespace bluemap {
         return {best_owner, best_influence};
     }
 
+    void Map::ColumnWorker::process_pixel(
+        const unsigned int width,
+        const unsigned int i,
+        const unsigned int y,
+        std::vector<Owner *> &this_row,
+        const std::vector<Owner *> &prev_row,
+        std::vector<double> &prev_influence,
+        std::vector<bool> &border
+    ) const {
+        const unsigned int x = start_x + i;
+        auto [owner, influence] = calculate_influence(x, y);
+
+        this_row[i] = owner;
+
+        // Draw image
+        const bool owner_changed = prev_row[i] == nullptr && owner != nullptr ||
+                                   prev_row[i] != nullptr && owner == nullptr ||
+                                   prev_row[i] != nullptr && prev_row[i] != owner;
+        if (y > 0) {
+            if (
+                const auto prev_owner = prev_row[i];
+                prev_owner != nullptr && !prev_owner->is_npc()
+            ) {
+                const bool draw_border = border[i] || owner_changed ||
+                                         i > 0 && prev_row[i - 1] != prev_row[i] ||
+                                         i < width - 1 && prev_row[i + 1] != prev_row[i];
+                const int alpha = std::min(
+                    190, static_cast<int>(std::log(std::log(prev_influence[i] + 1.0) + 1.0) * 700));
+
+                const auto color = prev_owner->get_color().with_alpha(
+                    draw_border ? std::max(0x48, alpha) : alpha
+                );
+                cache.set_pixel(i, y - row_offset, color);
+            }
+        }
+
+        prev_influence[i] = influence;
+        border[i] = y == 0 || owner_changed;
+    }
+
     void Map::ColumnWorker::render() {
         const unsigned int width = end_x - start_x;
         const unsigned int height = map->get_height();
@@ -179,38 +219,10 @@ namespace bluemap {
 
         for (unsigned int y = 0; y < height; ++y) {
             for (unsigned int i = 0; i < width; ++i) {
-                unsigned int x = start_x + i;
-                auto [owner, influence] = calculate_influence(x, y);
-
-                this_row[i] = owner;
-
-                // Draw image
-                const bool owner_changed = prev_row[i] == nullptr && owner != nullptr ||
-                                           prev_row[i] != nullptr && owner == nullptr ||
-                                           prev_row[i] != nullptr && prev_row[i] != owner;
-                if (y > 0) {
-                    if (
-                        const auto prev_owner = prev_row[i];
-                        prev_owner != nullptr && !prev_owner->is_npc()
-                    ) {
-                        const bool draw_border = border[i] || owner_changed ||
-                                                 i > 0 && prev_row[i - 1] != prev_row[i] ||
-                                                 i < width - 1 && prev_row[i + 1] != prev_row[i];
-                        const int alpha = std::min(
-                            190, static_cast<int>(std::log(std::log(prev_influence[i] + 1.0) + 1.0) * 700));
-
-                        const auto color = prev_owner->get_color().with_alpha(
-                            draw_border ? std::max(0x48, alpha) : alpha
-                        );
-                        cache.set_pixel(i, y - row_offset, color);
-                    }
-                }
-
-                prev_influence[i] = influence;
-                border[i] = y == 0 || owner_changed;
+                process_pixel(width, i, y, this_row, prev_row, prev_influence, border);
             }
-            //std::swap(this_row, prev_row);
-            auto t = prev_row;
+
+            const auto t = prev_row;
             prev_row = this_row;
             this_row = t;
             if (y > row_offset && y - row_offset == 15) {
@@ -323,7 +335,7 @@ namespace bluemap {
         for (int i = 0; i < thread_count; ++i) {
             const unsigned int start_x = i * width / thread_count;
             const unsigned int end_x = (i + 1) * width / thread_count;
-            workers.emplace_back(new ColumnWorker(this, start_x, end_x));
+            workers.emplace_back(create_worker(start_x, end_x));
             std::cout << "Starting thread " << i << " with x range " << start_x << " to " << end_x << std::endl;
             threads.emplace_back(&ColumnWorker::render, workers.back());
         }
@@ -337,6 +349,10 @@ namespace bluemap {
             delete worker;
         }
         std::cout << "Rendering completed" << std::endl;
+    }
+
+    Map::ColumnWorker * Map::create_worker(unsigned int start_x, unsigned int end_x) {
+        return new ColumnWorker(this, start_x, end_x);
     }
 
     void Map::paste_cache(const unsigned int start_x, const unsigned int start_y, const Image &cache, int height) {
