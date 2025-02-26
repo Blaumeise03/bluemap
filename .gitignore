@@ -10,10 +10,12 @@ build/
 dist/
 __pycache__/
 *.egg-info/
+cmake-build-*/
 
-# Output files of the program
+# Input & Output files of the program
 data*/
 out/
+*.dat
 
 *.png
 *.csv
