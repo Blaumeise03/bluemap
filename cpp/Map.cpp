@@ -212,11 +212,7 @@ namespace bluemap {
         }
         if (owner != nullptr) {
             owner->increment_counter();
-        }
-        if (owner != nullptr && (x % map->sample_rate == 0 && y % map->sample_rate == 0)) {
-            // owner_image is a one channel image with size = (map->width / map->sample_rate) * (map->height / map->sample_rate)
-            // We need to set the pixel at (x / map->sample_rate, y / map->sample_rate) to the owner
-            const size_t index = (x / map->sample_rate) + (y / map->sample_rate) * (map->width / map->sample_rate);
+            const size_t index = x + y * map->width;
             map->owner_image.get()[index] = owner;
         }
 
@@ -266,14 +262,12 @@ namespace bluemap {
     void Map::owner_flood_fill(unsigned int x, unsigned int y, MapOwnerLabel &label) {
         std::queue<std::pair<unsigned int, unsigned int> > q;
         q.emplace(x, y);
-        const auto sample_width = width / sample_rate;
-        const auto sample_height = height / sample_rate;
 
         while (!q.empty()) {
             auto [cx, cy] = q.front();
             q.pop();
 
-            size_t index = cx + (cy * sample_width);
+            const size_t index = cx + cy * width;
             if (owner_image[index] == nullptr || owner_image[index]->get_id() != label.owner_id) {
                 continue;
             }
@@ -281,19 +275,19 @@ namespace bluemap {
             // Set the current pixel to nullptr
             owner_image[index] = nullptr;
             ++label.count;
-            label.x += cx * sample_rate;
-            label.y += cy * sample_rate;
+            label.x += cx;
+            label.y += cy;
 
             // Add neighboring pixels to the queue
-            if (cx > 0) q.emplace(cx - 1, cy);
-            if (cx < sample_width - 1) q.emplace(cx + 1, cy);
-            if (cy > 0) q.emplace(cx, cy - 1);
-            if (cy < sample_height - 1) q.emplace(cx, cy + 1);
+            if (cx >= sample_rate) q.emplace(cx - sample_rate, cy);
+            if (cx + sample_rate < width) q.emplace(cx + sample_rate, cy);
+            if (cy >= sample_rate) q.emplace(cx, cy - sample_rate);
+            if (cy + sample_rate < height) q.emplace(cx, cy + sample_rate);
         }
     }
 
     Map::Map() {
-        this->owner_image = std::make_unique<Owner *[]>(width / sample_rate * height / sample_rate);
+        this->owner_image = std::make_unique<Owner *[]>(width * height);
     }
 
     Map::~Map() {
@@ -414,13 +408,12 @@ namespace bluemap {
         for (unsigned int y = 0; y < height; y += sample_rate) {
             for (unsigned int x = 0; x < width; x += sample_rate) {
                 // Get the owner at the current pixel
-                const size_t index = x / sample_rate + (y / sample_rate) * (width / sample_rate);
-                const Owner *owner = owner_image.get()[index];
+                const Owner *owner = owner_image.get()[x + y  * width];
                 if (owner == nullptr) {
                     continue;
                 }
                 auto label = MapOwnerLabel{owner->get_id()};
-                owner_flood_fill(x / sample_rate, y / sample_rate, label);
+                owner_flood_fill(x, y, label);
                 label.x = label.x / label.count + sample_rate / 2;
                 label.y = label.y / label.count + sample_rate / 2;
                 labels.push_back(label);
@@ -452,16 +445,14 @@ namespace bluemap {
         if (!file) {
             throw std::runtime_error("Unable to open file");
         }
-        file.write("SOVNV1.1", 8);
+        file.write("SOVNV1.0", 8);
         // Write header with width, height and sample rate
-        write_big_endian<uint64_t>(file, width / sample_rate);
-        write_big_endian<uint64_t>(file, height / sample_rate);
-        write_big_endian<uint64_t>(file, sample_rate);
+        write_big_endian<uint64_t>(file, width);
+        write_big_endian<uint64_t>(file, height);
         // Write the owner ids
-        for (unsigned int x = 0; x < width; x += sample_rate) {
-            for (unsigned int y = 0; y < height; y += sample_rate) {
-                const size_t index = x / sample_rate + (y / sample_rate) * (width / sample_rate);
-                if (const Owner *owner = owner_image.get()[index]; owner == nullptr) {
+        for (unsigned int x = 0; x < width; ++x) {
+            for (unsigned int y = 0; y < height; ++y) {
+                if (const Owner *owner = owner_image.get()[x + y * width]; owner == nullptr) {
                     write_big_endian<int64_t>(file, -1);
                 } else {
                     write_big_endian<int64_t>(file, static_cast<int64_t>(owner->get_id()));
