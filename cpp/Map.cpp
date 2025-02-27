@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <filesystem>
+#include <queue>
 #include <thread>
 
 namespace bluemap {
@@ -12,6 +13,11 @@ namespace bluemap {
                                      name(std::move(name)),
                                      color(color_red, color_green, color_blue),
                                      npc(is_npc) {
+    }
+
+    void Owner::increment_counter() {
+        std::lock_guard lock(guard);
+        count++;
     }
 
     id_t Owner::get_id() const {
@@ -204,6 +210,15 @@ namespace bluemap {
                 cache.set_pixel(i, y - row_offset, color);
             }
         }
+        if (owner != nullptr) {
+            owner->increment_counter();
+        }
+        if (owner != nullptr && (x % map->sample_rate == 0 && y % map->sample_rate == 0)) {
+            // owner_image is a one channel image with size = (map->width / map->sample_rate) * (map->height / map->sample_rate)
+            // We need to set the pixel at (x / map->sample_rate, y / map->sample_rate) to the owner
+            const size_t index = (x / map->sample_rate) + (y / map->sample_rate) * (map->width / map->sample_rate);
+            map->owner_image.get()[index] = owner;
+        }
 
         prev_influence[i] = influence;
         border[i] = y == 0 || owner_changed;
@@ -236,7 +251,50 @@ namespace bluemap {
         map->paste_cache(start_x, row_offset, cache, height - row_offset);
     }
 
-    Map::Map() = default;
+    Map::MapOwnerLabel::MapOwnerLabel(const id_t owner_id): owner_id(owner_id) {
+    }
+
+    /**
+     *
+     * Performs a flood fill on the owner_image to detect connected regions of the same owner
+     * As a result, all entries in the owner_image will be set to nullptr
+     *
+     * @param x the x coordinate to start the flood fill
+     * @param y the y coordinate
+     * @param label the label to detect the region
+     */
+    void Map::owner_flood_fill(unsigned int x, unsigned int y, MapOwnerLabel &label) {
+        std::queue<std::pair<unsigned int, unsigned int> > q;
+        q.emplace(x, y);
+        const auto sample_width = width / sample_rate;
+        const auto sample_height = height / sample_rate;
+
+        while (!q.empty()) {
+            auto [cx, cy] = q.front();
+            q.pop();
+
+            size_t index = cx + (cy * sample_width);
+            if (owner_image[index] == nullptr || owner_image[index]->get_id() != label.owner_id) {
+                continue;
+            }
+
+            // Set the current pixel to nullptr
+            owner_image[index] = nullptr;
+            ++label.count;
+            label.x += cx * sample_rate;
+            label.y += cy * sample_rate;
+
+            // Add neighboring pixels to the queue
+            if (cx > 0) q.emplace(cx - 1, cy);
+            if (cx < sample_width - 1) q.emplace(cx + 1, cy);
+            if (cy > 0) q.emplace(cx, cy - 1);
+            if (cy < sample_height - 1) q.emplace(cx, cy + 1);
+        }
+    }
+
+    Map::Map() {
+        this->owner_image = std::make_unique<Owner *[]>(width / sample_rate * height / sample_rate);
+    }
 
     Map::~Map() {
         for (auto &[_, owner]: owners) {
@@ -350,6 +408,27 @@ namespace bluemap {
         LOG("Rendering completed")
     }
 
+    std::vector<Map::MapOwnerLabel> Map::calculate_labels() {
+        std::vector<MapOwnerLabel> labels;
+        // Iterate over all pixels according to the sample rate
+        for (unsigned int y = 0; y < height; y += sample_rate) {
+            for (unsigned int x = 0; x < width; x += sample_rate) {
+                // Get the owner at the current pixel
+                const size_t index = x / sample_rate + (y / sample_rate) * (width / sample_rate);
+                const Owner *owner = owner_image.get()[index];
+                if (owner == nullptr) {
+                    continue;
+                }
+                auto label = MapOwnerLabel{owner->get_id()};
+                owner_flood_fill(x / sample_rate, y / sample_rate, label);
+                label.x = label.x / label.count + sample_rate / 2;
+                label.y = label.y / label.count + sample_rate / 2;
+                labels.push_back(label);
+            }
+        }
+        return labels;
+    }
+
     Map::ColumnWorker *Map::create_worker(unsigned int start_x, unsigned int end_x) {
         return new ColumnWorker(this, start_x, end_x);
     }
@@ -365,6 +444,31 @@ namespace bluemap {
                 image.set_pixel(start_x + x, start_y + y, r, g, b, a);
             }
         }
+    }
+
+    void Map::save_owner_image(const std::string &filename) const {
+        // Write the owner ids to a binary file
+        std::ofstream file(filename, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Unable to open file");
+        }
+        file.write("SOVNV1.1", 8);
+        // Write header with width, height and sample rate
+        write_big_endian<uint64_t>(file, width / sample_rate);
+        write_big_endian<uint64_t>(file, height / sample_rate);
+        write_big_endian<uint64_t>(file, sample_rate);
+        // Write the owner ids
+        for (unsigned int x = 0; x < width; x += sample_rate) {
+            for (unsigned int y = 0; y < height; y += sample_rate) {
+                const size_t index = x / sample_rate + (y / sample_rate) * (width / sample_rate);
+                if (const Owner *owner = owner_image.get()[index]; owner == nullptr) {
+                    write_big_endian<int64_t>(file, -1);
+                } else {
+                    write_big_endian<int64_t>(file, static_cast<int64_t>(owner->get_id()));
+                }
+            }
+        }
+        file.close();
     }
 
     void Map::save(const std::string &filename) const {
