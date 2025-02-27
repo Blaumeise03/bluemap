@@ -5,7 +5,10 @@
 int main() {
     const auto map = std::make_shared<bluemap::Map>();
     map->load_data("../dump.dat");
+    map->load_old_owners("../old.n.dat");
     std::cout << "Loaded data, calculating influence" << std::endl;
+    //map->debug_save_old_owners("old.png");
+    //return 1;
     map->calculate_influence();
     std::cout << "Rendering" << std::endl;
     map->render_multithreaded();

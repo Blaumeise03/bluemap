@@ -132,7 +132,7 @@ namespace bluemap {
         std::mutex image_mutex;
         Image image = Image(width, height);
         std::unique_ptr<Owner *[]> owner_image = nullptr;
-        std::unique_ptr<id_t> old_owners_image = nullptr;
+        std::unique_ptr<id_t[]> old_owners_image = nullptr;
 
         void add_influence(SolarSystem *solar_system,
                            Owner *owner,
@@ -145,6 +145,7 @@ namespace bluemap {
             Map *map;
             unsigned int start_x;
             unsigned int end_x;
+            bool render_old_owners = false;
 
             // The current start offset for the cache
             unsigned int row_offset = 0;
@@ -212,6 +213,10 @@ namespace bluemap {
         void paste_cache(unsigned int start_x, unsigned int start_y, const Image &cache, int height = -1);
 
         void save_owner_image(const std::string &filename) const;
+
+        void load_old_owners(const std::string &filename);
+
+        void debug_save_old_owners(const std::string &filename) const;
 
         void save(const std::string &filename) const;
 

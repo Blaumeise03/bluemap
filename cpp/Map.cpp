@@ -146,6 +146,7 @@ namespace bluemap {
         assert(map != nullptr);
         assert(start_x < end_x);
         this->sov_solar_systems = map->sov_solar_systems;
+        this->render_old_owners = map->old_owners_image != nullptr;
     }
 
     std::tuple<Owner *, double> Map::ColumnWorker::calculate_influence(unsigned int x, unsigned int y) const {
@@ -208,6 +209,24 @@ namespace bluemap {
                     draw_border ? std::max(0x48, alpha) : alpha
                 );
                 cache.set_pixel(i, y - row_offset, color);
+
+                if (render_old_owners) {
+                    if (const auto old_owner_id = map->old_owners_image.get()[x + y * map->get_width()];
+                        old_owner_id != 0 && old_owner_id != prev_owner->get_id()
+                    ) {
+                        const auto old_owner = map->owners[old_owner_id];
+                        Color old_color = {255, 255, 255};
+                        if (old_owner != nullptr) {
+                            old_color = old_owner->get_color();
+                        }
+
+                        if (constexpr int slant = 5;
+                            (y % slant + x) % slant == 0
+                        ) {
+                            cache.set_pixel(i, y - row_offset, old_color.with_alpha(alpha));
+                        }
+                    }
+                }
             }
         }
         if (owner != nullptr) {
@@ -408,7 +427,7 @@ namespace bluemap {
         for (unsigned int y = 0; y < height; y += sample_rate) {
             for (unsigned int x = 0; x < width; x += sample_rate) {
                 // Get the owner at the current pixel
-                const Owner *owner = owner_image.get()[x + y  * width];
+                const Owner *owner = owner_image.get()[x + y * width];
                 if (owner == nullptr) {
                     continue;
                 }
@@ -440,15 +459,14 @@ namespace bluemap {
     }
 
     void Map::save_owner_image(const std::string &filename) const {
-        // Write the owner ids to a binary file
         std::ofstream file(filename, std::ios::binary);
         if (!file) {
             throw std::runtime_error("Unable to open file");
         }
         file.write("SOVNV1.0", 8);
-        // Write header with width, height and sample rate
-        write_big_endian<uint64_t>(file, width);
-        write_big_endian<uint64_t>(file, height);
+        // Write header with width and height
+        write_big_endian<int32_t>(file, width);
+        write_big_endian<int32_t>(file, height);
         // Write the owner ids
         for (unsigned int x = 0; x < width; ++x) {
             for (unsigned int y = 0; y < height; ++y) {
@@ -460,6 +478,59 @@ namespace bluemap {
             }
         }
         file.close();
+    }
+
+    void Map::load_old_owners(const std::string &filename) {
+        std::ifstream file(filename, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Unable to open file");
+        }
+        // Read the header
+        char header[8] = {0};
+        file.read(header, 8);
+        if (std::string(header, 8) != "SOVNV1.0") {
+            throw std::runtime_error("Invalid file format: " + std::string(header, 8));
+        }
+        // Read the width and height
+        const auto file_width = read_big_endian<int32_t>(file);
+        const auto file_height = read_big_endian<int32_t>(file);
+        if (file_width != width || file_height != height) {
+            throw std::runtime_error("Invalid file dimensions, expected " + std::to_string(width) + "x" +
+                                     std::to_string(height) + " but got " + std::to_string(file_width) + "x" +
+                                     std::to_string(file_height));
+        }
+        old_owners_image = std::make_unique<id_t[]>(width * height);
+        // Read the owner ids
+        for (unsigned int x = 0; x < width; ++x) {
+            for (unsigned int y = 0; y < height; ++y) {
+                const auto owner_id = read_big_endian<int64_t>(file);
+                if (x == 1335 && y == 25) {
+                    LOG(owner_id << " into " << (x + y * width))
+                }
+                if ( owner_id == -1) {
+                    old_owners_image.get()[x + y * width] = 0;
+                } else {
+                    old_owners_image.get()[x + y * width] = owner_id;
+                }
+            }
+        }
+        file.close();
+    }
+
+    void Map::debug_save_old_owners(const std::string &filename) const {
+        Image debug_image(width, height);
+        for (unsigned int x = 0; x < width; ++x) {
+            for (unsigned int y = 0; y < height; ++y) {
+                const auto owner_id = old_owners_image.get()[x + y * width];
+                if (owner_id == 0) {
+                    debug_image.set_pixel(x, y, 0, 0, 0);
+                } else {
+                    const auto owner = owners.at(owner_id);
+                    debug_image.set_pixel(x, y, owner->get_color().with_alpha(255));
+                }
+            }
+        }
+        debug_image.write(filename.c_str());
     }
 
     void Map::save(const std::string &filename) const {
