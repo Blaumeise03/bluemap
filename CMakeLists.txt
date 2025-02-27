@@ -13,3 +13,4 @@ file(GLOB CPP_SOURCES "${PROJECT_SOURCE_DIR}/cpp/*.cpp")
 
 # Add the executable
 add_executable(evemapper ${CPP_SOURCES})
+add_compile_definitions(EVE_MAPPER_DEBUG_LOG)

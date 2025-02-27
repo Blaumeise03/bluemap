@@ -10,6 +10,12 @@
 #include <utility>
 #include <vector>
 
+#if defined(EVE_MAPPER_DEBUG_LOG) && EVE_MAPPER_DEBUG_LOG
+#define LOG(x) std::cout << x << std::endl;
+#else
+#define LOG(x)
+#endif
+
 namespace bluemap {
     typedef unsigned long long id_t;
 

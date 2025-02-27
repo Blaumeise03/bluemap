@@ -254,7 +254,7 @@ namespace bluemap {
         }
 
         int owner_size = read_big_endian<int32_t>(file);
-        std::cout << "Loading " << owner_size << " owners" << std::endl;
+        LOG("Loading " << owner_size << " owners")
         for (int i = 0; i < owner_size; ++i) {
             int id = read_big_endian<int32_t>(file);
             int name_length = read_big_endian<uint16_t>(file);
@@ -269,7 +269,7 @@ namespace bluemap {
         }
 
         int systems_size = read_big_endian<int32_t>(file);
-        std::cout << "Loading " << systems_size << " solar systems" << std::endl;
+        LOG("Loading " << systems_size << " solar systems")
         for (int i = 0; i < systems_size; ++i) {
             int id = read_big_endian<int32_t>(file);
             int x = read_big_endian<int32_t>(file);
@@ -286,7 +286,7 @@ namespace bluemap {
         }
 
         int jumps_table_size = read_big_endian<int32_t>(file);
-        std::cout << "Loading " << jumps_table_size << " connections" << std::endl;
+        LOG("Loading " << jumps_table_size << " connections")
         for (int i = 0; i < jumps_table_size; ++i) {
             int key_id = read_big_endian<int32_t>(file);
             int value_size = read_big_endian<int32_t>(file);
@@ -299,8 +299,8 @@ namespace bluemap {
             }
             connections[key_id] = value;
         }
-        std::cout << "Loaded " << owners.size() << " owners, " << solar_systems.size() << " solar systems, and "
-                << connections.size() << " connections" << std::endl;
+        LOG("Loaded " << owners.size() << " owners, " << solar_systems.size() << " solar systems, and "
+            << connections.size() << " connections")
     }
 
     void Map::calculate_influence() {
@@ -311,7 +311,7 @@ namespace bluemap {
                 }
             }
         }
-        std::cout << "Calculating influence for " << sov_solar_systems.size() << " solar systems" << std::endl;
+        LOG("Calculating influence for " << sov_solar_systems.size() << " solar systems")
         auto sov_orig = sov_solar_systems;
         for (const auto &solar_system: sov_orig) {
             double influence = 10.0;
@@ -331,27 +331,26 @@ namespace bluemap {
         const unsigned int thread_count = std::thread::hardware_concurrency();
         std::vector<std::thread> threads;
         std::vector<ColumnWorker *> workers;
-        std::cout << "Starting " << thread_count << " threads" << std::endl;
+        LOG("Starting " << thread_count << " threads")
         for (int i = 0; i < thread_count; ++i) {
             const unsigned int start_x = i * width / thread_count;
             const unsigned int end_x = (i + 1) * width / thread_count;
             workers.emplace_back(create_worker(start_x, end_x));
-            std::cout << "Starting thread " << i << " with x range " << start_x << " to " << end_x << std::endl;
+            //std::cout << "Starting thread " << i << " with x range " << start_x << " to " << end_x << std::endl;
             threads.emplace_back(&ColumnWorker::render, workers.back());
         }
-        std::cout << "Waiting for threads to finish" << std::endl;
+        LOG("Waiting for threads to finish")
         for (auto &thread: threads) {
             if (thread.joinable())
                 thread.join();
         }
-        std::cout << "Threads finished" << std::endl;
         for (const auto worker: workers) {
             delete worker;
         }
-        std::cout << "Rendering completed" << std::endl;
+        LOG("Rendering completed")
     }
 
-    Map::ColumnWorker * Map::create_worker(unsigned int start_x, unsigned int end_x) {
+    Map::ColumnWorker *Map::create_worker(unsigned int start_x, unsigned int end_x) {
         return new ColumnWorker(this, start_x, end_x);
     }
 
