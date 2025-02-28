@@ -21,12 +21,10 @@ def mem_test():
         diff = memory - start_memory
         print(f"Render {i} done: {memory:.2f} MB ({diff:+.2f} MB)")
         start_memory = memory
-        raw = sov_map._map.get_image_as_ndarray()
-        img = PIL.Image.fromarray(raw, "RGBA")
-        img.save("sov_map2.png")
+        img_buffer = sov_map.get_image()
         memory = process.memory_info().rss / 1024 / 1024
         diff = memory - start_memory
-        print(f"Image {i} saved: {memory:.2f} MB ({diff:+.2f} MB)")
+        print(f"Image {i} loaded: {memory:.2f} MB ({diff:+.2f} MB)")
         start_memory = memory
 
 
@@ -41,10 +39,6 @@ def load_data_from_db(host, user, password, database) -> tuple[list[dict], list[
         database=database,
         cursorclass=pymysql.cursors.DictCursor
     )
-
-    width = 928 * 2
-    height = 1024 * 2
-    scale = 4.8445284569785E17 / ((width - 20) / 2.0)
 
     try:
         with connection.cursor() as cursor:
@@ -65,15 +59,16 @@ def load_data_from_db(host, user, password, database) -> tuple[list[dict], list[
 
             # Load systems
             cursor.execute(
-                "SELECT solarSystemID, constellationID, regionID, x, z, stantion, ADM, allianceID FROM mapsolarsystems")
+                "SELECT solarSystemID, constellationID, regionID, x, y, z, stantion, ADM, allianceID FROM mapsolarsystems")
             systems = []
             for row in cursor.fetchall():
                 systems.append({
                     'id': row['solarSystemID'],
                     'constellation_id': row['constellationID'],
                     'region_id': row['regionID'],
-                    'x': int((((row['x'] or 0) / scale) + width / 2 + 208) + 0.5),
-                    'y': int((((row['z'] or 0) / scale) + height / 2 + 0) + 0.5),
+                    'x': row['x'],
+                    'y': row['y'],
+                    'z': row['z'],
                     'has_station': row['stantion'] == 1,
                     'sov_power': row['ADM'],
                     'owner': row['allianceID'],
@@ -98,11 +93,16 @@ def main():
     parser.add_argument('--database', required=True, help='Database name')
     args = parser.parse_args()
 
+    print("Loading data from database...")
     owners, systems, connections = load_data_from_db(args.host, args.user, args.password, args.database)
+    print("Preparing map...")
     sov_map = SovMap()
     sov_map.load_data(owners, systems, connections)
+    print("Rendering map...")
     sov_map.render(thread_count=16)
-    sov_map.save("sov_map.png")
+    print("Saving map...")
+    sov_map.save("influence.png")
+    print("Done.")
 
 if __name__ == "__main__":
-    mem_test()
+    main()
