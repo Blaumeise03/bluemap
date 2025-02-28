@@ -1,7 +1,11 @@
 #include "Image.h"
 
+#if defined(EVE_MAPPER_LINK_STB) && EVE_MAPPER_LINK_STB
+#ifndef STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#endif
 #include "stb_image_write.h"
+#endif
 
 #include <cassert>
 #include <cstdint>
@@ -95,11 +99,15 @@ const uint8_t *Image::get_pixel_unsafe(const unsigned int x, const unsigned int 
     return &data[(y * width + x) * 4];
 }
 
-void Image::write(const char *filename) {
-    if (data == nullptr) alloc();
+void Image::write(const char *filename) const {
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
+#if defined(EVE_MAPPER_LINK_STB) && EVE_MAPPER_LINK_STB
     if (!stbi_write_png(filename, width, height, 4, data, width * 4)) {
         throw std::runtime_error("Unable to write image");
     }
+#else
+    throw std::runtime_error("STB image write is not linked");
+#endif
 }
 
 unsigned int Image::get_width() const {

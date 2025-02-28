@@ -16,7 +16,7 @@ def mem_test():
         sov_map = SovMap()
         sov_map.load_data_from_file("dump.dat")
         sov_map.render(thread_count=16)
-        sov_map.save("sov_map.png")
+        #sov_map.save("sov_map.png")
         memory = process.memory_info().rss / 1024 / 1024
         diff = memory - start_memory
         print(f"Render {i} done: {memory:.2f} MB ({diff:+.2f} MB)")

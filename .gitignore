@@ -11,6 +11,7 @@ dist/
 __pycache__/
 *.egg-info/
 cmake-build-*/
+cpp/stb_image_write.h
 
 # Input & Output files of the program
 data*/
