@@ -3,10 +3,12 @@
 #include <cstdint>
 
 struct Color {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
+    uint8_t red = 0;
+    uint8_t green = 0;
+    uint8_t blue = 0;
     uint8_t alpha = 255;
+
+    Color() = default;
 
     Color(const uint_fast8_t red, const uint_fast8_t green, const uint_fast8_t blue)
         : red(red),

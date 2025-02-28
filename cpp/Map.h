@@ -51,6 +51,28 @@ namespace bluemap {
         file.write(reinterpret_cast<const char *>(&value), sizeof(T));
     }
 
+    struct OwnerData {
+        id_t id = 0;
+        Color color;
+        bool npc = false;
+    };
+
+    struct SolarSystemData {
+        id_t id = 0;
+        id_t constellation_id = 0;
+        id_t region_id = 0;
+        unsigned int x = 0;
+        unsigned int y = 0;
+        bool has_station = false;
+        double sov_power = 1.0;
+        id_t owner = 0;
+    };
+
+    struct JumpData {
+        id_t sys_from = 0;
+        id_t sys_to = 0;
+    };
+
     class Owner {
         id_t id;
         std::string name;
@@ -199,6 +221,10 @@ namespace bluemap {
         ~Map();
 
         void load_data(const std::string &filename);
+
+        void load_data(const std::vector<OwnerData> &owners,
+                       const std::vector<SolarSystemData> &solar_systems,
+                       const std::vector<JumpData> &jumps);
 
         void calculate_influence();
 

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <queue>
 #include <thread>
+#include <string>
 
 namespace bluemap {
     Owner::Owner(const id_t id, std::string name, const int color_red, const int color_green, const int color_blue,
@@ -372,6 +373,23 @@ namespace bluemap {
         }
         LOG("Loaded " << owners.size() << " owners, " << solar_systems.size() << " solar systems, and "
             << connections.size() << " connections")
+    }
+
+    void Map::load_data(const std::vector<OwnerData> &owners, const std::vector<SolarSystemData> &solar_systems,
+        const std::vector<JumpData> &jumps) {
+        for (const auto &owner_data: owners) {
+            this->owners[owner_data.id] = new Owner(owner_data.id,"", owner_data.color.red,
+                                                    owner_data.color.green, owner_data.color.blue, owner_data.npc);
+        }
+        for (const auto &solar_system_data: solar_systems) {
+            this->solar_systems[solar_system_data.id] = new SolarSystem(solar_system_data.id,
+                solar_system_data.constellation_id, solar_system_data.region_id, solar_system_data.x,
+                solar_system_data.y, solar_system_data.has_station, solar_system_data.sov_power,
+                solar_system_data.owner == 0 ? nullptr : this->owners[solar_system_data.owner]);
+        }
+        for (const auto &[sys_from, sys_to]: jumps) {
+            connections[sys_from].push_back(this->solar_systems[sys_to]);
+        }
     }
 
     void Map::calculate_influence() {

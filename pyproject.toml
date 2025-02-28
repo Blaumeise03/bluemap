@@ -8,9 +8,12 @@ version = "1.0.0a1.dev1"
 
 [tool.setuptools]
 packages = ["bluemap"]
-ext-modules = [
-  {name = "bluemap.wrapper", sources = ["bluemap/wrapper.pyx", "cpp/functions.cpp"], include-dirs = ["cpp"], language = "c++"}
-]
+#ext-modules = [
+#  {name = "bluemap.wrapper", sources = [
+#    "bluemap/wrapper.pyx",
+#    "cpp/Image.cpp", "cpp/Map.cpp"
+#  ], include-dirs = ["cpp"], language = "c++", extra-compile-args = ["-std=c++17", "/std:c++17"]}
+#]
 
 [project.scripts]
 bluemap = "bluemap.main:main"
