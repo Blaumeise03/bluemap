@@ -460,6 +460,7 @@ namespace bluemap {
     }
 
     Map::ColumnWorker *Map::create_worker(unsigned int start_x, unsigned int end_x) {
+        image.alloc();
         return new ColumnWorker(this, start_x, end_x);
     }
 
@@ -553,6 +554,25 @@ namespace bluemap {
 
     void Map::save(const std::string &filename) const {
         image.write(filename.c_str());
+    }
+
+    uint8_t * Map::retrieve_image() {
+        return image.retrieve_data();
+    }
+
+    id_t * Map::create_owner_image() const {
+        const auto owner_image = new id_t[width * height];
+        for (unsigned int x = 0; x < width; ++x) {
+            for (unsigned int y = 0; y < height; ++y) {
+                const auto owner = this->owner_image.get()[x + y * width];
+                if (owner == nullptr) {
+                    owner_image[x + y * width] = 0;
+                } else {
+                    owner_image[x + y * width] = owner->get_id();
+                }
+            }
+        }
+        return owner_image;
     }
 
     unsigned int Map::get_width() const {

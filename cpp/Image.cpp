@@ -3,6 +3,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#include <cassert>
 #include <cstdint>
 #include <stdexcept>
 
@@ -10,11 +11,16 @@ Color Color::with_alpha(uint8_t alpha) const {
     return {red, green, blue, alpha};
 }
 
-Image::Image(const unsigned int width, const unsigned int height) {
-    this->width = width;
-    this->height = height;
+void Image::alloc() {
+    if (data != nullptr) return;
     this->data = new uint8_t[width * height * 4]; // Allocate memory for RGBA
     std::fill_n(data, width * height * 4, 0);
+}
+
+Image::Image(const unsigned int width, const unsigned int height) : data(nullptr) {
+    this->width = width;
+    this->height = height;
+    alloc();
 }
 
 Image::~Image() {
@@ -31,6 +37,8 @@ void Image::set_pixel(const unsigned int x, const unsigned int y, const uint8_t 
     if (x >= width || y >= height) {
         throw std::out_of_range("Pixel out of bounds");
     }
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
+
     data[(y * width + x) * 4 + 0] = r;
     data[(y * width + x) * 4 + 1] = g;
     data[(y * width + x) * 4 + 2] = b;
@@ -41,6 +49,8 @@ void Image::set_pixel(const unsigned int x, const unsigned int y, const Color &c
     if (x >= width || y >= height) {
         throw std::out_of_range("Pixel out of bounds");
     }
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
+
     data[(y * width + x) * 4 + 0] = color.red;
     data[(y * width + x) * 4 + 1] = color.green;
     data[(y * width + x) * 4 + 2] = color.blue;
@@ -48,6 +58,8 @@ void Image::set_pixel(const unsigned int x, const unsigned int y, const Color &c
 }
 
 void Image::set_pixel_unsafe(const unsigned int x, const unsigned int y, const uint8_t *pixel) const {
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
+
     data[(y * width + x) * 4 + 0] = pixel[0];
     data[(y * width + x) * 4 + 1] = pixel[1];
     data[(y * width + x) * 4 + 2] = pixel[2];
@@ -55,13 +67,21 @@ void Image::set_pixel_unsafe(const unsigned int x, const unsigned int y, const u
 }
 
 void Image::reset() const {
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
     std::fill_n(data, width * height * 4, 0);
+}
+
+uint8_t * Image::retrieve_data() {
+    const auto d = data;
+    this->data = nullptr;
+    return d;
 }
 
 Color Image::get_pixel(const unsigned int x, const unsigned int y) const {
     if (x >= width || y >= height) {
         throw std::out_of_range("Pixel out of bounds");
     }
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
     return {
         data[(y * width + x) * 4 + 0],
         data[(y * width + x) * 4 + 1],
@@ -71,10 +91,12 @@ Color Image::get_pixel(const unsigned int x, const unsigned int y) const {
 }
 
 const uint8_t *Image::get_pixel_unsafe(const unsigned int x, const unsigned int y) const {
+    if (data == nullptr)  throw std::runtime_error("Image has not been allocated");
     return &data[(y * width + x) * 4];
 }
 
-void Image::write(const char *filename) const {
+void Image::write(const char *filename) {
+    if (data == nullptr) alloc();
     if (!stbi_write_png(filename, width, height, 4, data, width * 4)) {
         throw std::runtime_error("Unable to write image");
     }

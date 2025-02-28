@@ -2,6 +2,9 @@ import argparse
 
 from typing import Any
 
+import PIL
+from PIL.Image import Image
+
 from bluemap.map import SovMap
 
 
@@ -17,6 +20,13 @@ def mem_test():
         memory = process.memory_info().rss / 1024 / 1024
         diff = memory - start_memory
         print(f"Render {i} done: {memory:.2f} MB ({diff:+.2f} MB)")
+        start_memory = memory
+        raw = sov_map._map.get_image_as_ndarray()
+        img = PIL.Image.fromarray(raw, "RGBA")
+        img.save("sov_map2.png")
+        memory = process.memory_info().rss / 1024 / 1024
+        diff = memory - start_memory
+        print(f"Image {i} saved: {memory:.2f} MB ({diff:+.2f} MB)")
         start_memory = memory
 
 
@@ -95,4 +105,4 @@ def main():
     sov_map.save("sov_map.png")
 
 if __name__ == "__main__":
-    main()
+    mem_test()

@@ -246,6 +246,12 @@ namespace bluemap {
 
         void save(const std::string &filename) const;
 
+        /// Returns and clears the rendered image, the caller is responsible for deleting the data
+        [[nodiscard]] uint8_t *retrieve_image();
+
+        /// Returns the owner image, the caller is responsible for deleting the data
+        [[nodiscard]] id_t *create_owner_image() const;
+
         [[nodiscard]] unsigned int get_width() const;
 
         [[nodiscard]] unsigned int get_height() const;

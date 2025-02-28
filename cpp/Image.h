@@ -32,10 +32,13 @@ class Image {
 
     uint8_t *data;
 
+
 public:
     Image(unsigned int width, unsigned int height);
 
     ~Image();
+
+    void alloc();
 
     void set_pixel(unsigned int x, unsigned int y, uint8_t r, uint8_t g, uint8_t b) const;
 
@@ -47,6 +50,9 @@ public:
     void set_pixel_unsafe(unsigned int x, unsigned int y, const uint8_t *pixel) const;
 
     void reset() const;
+
+    /// Returns the raw data, THE CALLER IS RESPONSIBLE FOR DELETING IT
+    [[nodiscard]] uint8_t *retrieve_data();
 
     [[nodiscard]] Color get_pixel(unsigned int x, unsigned int y) const;
 
