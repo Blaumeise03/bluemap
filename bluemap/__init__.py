@@ -1,1 +1,1 @@
-from .wrapper import SovMap, ColumnWorker, SolarSystem, Owner, MapOwnerLabel, BufferWrapper
+from ._map import SovMap, ColumnWorker, SolarSystem, Owner, MapOwnerLabel, BufferWrapper, OwnerImage

@@ -3,9 +3,9 @@ from Cython.Build import cythonize
 
 extensions = [
     Extension(
-        name="bluemap.wrapper",
+        name="bluemap._map",
         sources=[
-            "bluemap/wrapper.pyx",
+            "bluemap/_map.pyx",
             "cpp/Image.cpp",
             "cpp/Map.cpp"
         ],

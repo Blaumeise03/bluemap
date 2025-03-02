@@ -485,8 +485,8 @@ cdef class OwnerImage:
                     buffer[x, y] = struct.unpack(">q", stream.read(8))[0]
         return buffer
 
-    @staticmethod
-    def load_from_file(path: Path | os.PathLike[str] | str) -> OwnerImage:
+    @classmethod
+    def load_from_file(cls, path: Path | os.PathLike[str] | str) -> OwnerImage:
         if not isinstance(path, Path):
             path = Path(path)
         if not path.exists():

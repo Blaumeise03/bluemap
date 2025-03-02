@@ -2,11 +2,7 @@ import argparse
 
 from typing import Any
 
-import PIL
-import numpy as np
-from PIL.Image import Image
-
-from bluemap.wrapper import SovMap, OwnerImage
+from . import SovMap, OwnerImage
 
 
 def mem_test():
@@ -87,6 +83,7 @@ def load_data_from_db(host, user, password, database) -> tuple[list[dict], list[
 
 
 def test_wrapper():
+    import numpy as np
     owner_image = OwnerImage.load_from_file("sovchange_2025-02-23.dat")
     arr = owner_image.as_ndarray()
     count_nonzero = np.count_nonzero(arr)
