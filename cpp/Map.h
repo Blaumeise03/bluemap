@@ -195,12 +195,12 @@ namespace bluemap {
         };
 
         struct MapOwnerLabel {
-            id_t owner_id;
+            id_t owner_id = 0;
             unsigned long long x = 0;
             unsigned long long y = 0;
             size_t count = 0;
 
-            MapOwnerLabel() = default;
+            MapOwnerLabel();
 
             explicit MapOwnerLabel(id_t owner_id);
         };
@@ -256,9 +256,15 @@ namespace bluemap {
         /// Returns the owner image, the caller is responsible for deleting the data
         [[nodiscard]] id_t *create_owner_image() const;
 
+        /// Sets the old owner image, this will transfer ownership of the data to the map
+        /// Must have a size of width * height
+        void set_old_owner_image(id_t *old_owner_image, unsigned int width, unsigned int height);
+
         [[nodiscard]] unsigned int get_width() const;
 
         [[nodiscard]] unsigned int get_height() const;
+
+        [[nodiscard]] bool has_old_owner_image() const;
     };
 } // bluemap
 

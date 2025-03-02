@@ -3,9 +3,10 @@ import argparse
 from typing import Any
 
 import PIL
+import numpy as np
 from PIL.Image import Image
 
-from bluemap.wrapper import SovMap
+from bluemap.wrapper import SovMap, OwnerImage
 
 
 def mem_test():
@@ -85,6 +86,14 @@ def load_data_from_db(host, user, password, database) -> tuple[list[dict], list[
         connection.close()
 
 
+def test_wrapper():
+    owner_image = OwnerImage.load_from_file("sovchange_2025-02-23.dat")
+    arr = owner_image.as_ndarray()
+    count_nonzero = np.count_nonzero(arr)
+    print(count_nonzero)
+    owner_image.save("sovchange_2025-02-23-2.dat")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Load data from MariaDB and render SovMap.')
     parser.add_argument('--host', required=True, help='Database host')
@@ -109,4 +118,4 @@ def main():
     print("Done.")
 
 if __name__ == "__main__":
-    mem_test()
+    test_wrapper()

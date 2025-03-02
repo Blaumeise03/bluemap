@@ -6,6 +6,8 @@
 # Build results
 /bluemap/**/*.pyd
 /bluemap/**/*.cpp
+/bluemap/**/*.c
+/bluemap/**/*.html
 build/
 dist/
 __pycache__/

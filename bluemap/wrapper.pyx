@@ -1,11 +1,17 @@
 # distutils: language = c++
 import os
 import weakref
+import zlib
 from pathlib import Path
+from typing import Generator
 
-from libc.stdlib cimport free
+from libc.stdlib cimport free, malloc
+from libcpp cimport bool as cbool
 from libcpp.string cimport string
 from libcpp.vector cimport vector
+
+from .stream import StreamReader, StreamWriter
+from .stream cimport StreamReader, StreamWriter
 
 cdef extern from "stdint.h":
     ctypedef unsigned char uint8_t
@@ -56,11 +62,15 @@ cdef extern from "Map.h" namespace "bluemap":
 
         vector[CMap.CMapOwnerLabel] calculate_labels() except +
 
+        # All three functions will transfer the ownership of the ptr
         uint8_t *retrieve_image() except +
         id_t *create_owner_image() except +
+        # Will raise exception if size does not match (ptr will still be deallocated)
+        void set_old_owner_image(id_t *old_owner_image, unsigned int width, unsigned int height) except +
 
         unsigned int get_width()
         unsigned int get_height()
+        cbool has_old_owner_image()
 
     cdef struct COwnerData "bluemap::OwnerData":
         id_t id
@@ -82,11 +92,14 @@ cdef extern from "Map.h" namespace "bluemap":
         id_t sys_to
 
 
-cdef class ImageWrapper:
+cdef class BufferWrapper:
     cdef void * data_ptr
     cdef Py_ssize_t width
     cdef Py_ssize_t height
     cdef Py_ssize_t channels
+    cdef Py_ssize_t itemsize
+    # 1 = uint8_t, 2 = id_t
+    cdef int dtype
 
     cdef Py_ssize_t shape[3]
     cdef Py_ssize_t strides[3]
@@ -95,32 +108,48 @@ cdef class ImageWrapper:
         self.data_ptr = NULL
         self.width = 0
         self.height = 0
-        self.channels = 4
+        self.channels = 0
+        self.itemsize = 1
 
     # noinspection PyAttributeOutsideInit
-    cdef set_data(self, int width, int height, void * data_ptr):
+    cdef set_data(
+            self,
+            int width, int height, void * data_ptr,
+            int channels, int dtype=1):
         self.data_ptr = data_ptr
         self.width = width
         self.height = height
+        self.channels = channels
+        self.dtype = dtype
+        if dtype == 1:
+            self.itemsize = 1
+        elif dtype == 2:
+            self.itemsize = 8
+        else:
+            self.itemsize = 1
+
+        self.shape[0] = self.height
+        self.shape[1] = self.width
+        self.shape[2] = self.channels
+        self.strides[0] = self.width * self.channels * self.itemsize
+        self.strides[1] = self.channels * self.itemsize
+        self.strides[2] = self.itemsize
 
     def __dealloc__(self):
         free(self.data_ptr)
         self.data_ptr = NULL
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
-        cdef Py_ssize_t itemsize = 1
-
-        self.shape[0] = self.height
-        self.shape[1] = self.width
-        self.shape[2] = self.channels
-        self.strides[0] = self.width * self.channels
-        self.strides[1] = self.channels
-        self.strides[2] = 1
         buffer.buf = <char *> self.data_ptr
-        buffer.format = 'B'
+        if self.dtype == 1:
+            buffer.format = 'B'
+        elif self.dtype == 2:
+            buffer.format = 'Q'
+        else:
+            buffer.format = 'c'
         buffer.internal = NULL
-        buffer.itemsize = itemsize
-        buffer.len = self.width * self.height * self.channels * itemsize
+        buffer.itemsize = self.itemsize
+        buffer.len = self.width * self.height * self.channels * self.itemsize
         buffer.ndim = 3
         buffer.obj = self
         buffer.readonly = 0
@@ -145,6 +174,78 @@ cdef class ImageWrapper:
     @property
     def size(self):
         return self.width, self.height
+
+    cdef object get_value(self, int x, int y, int c):
+        if self.dtype == 1:
+            return (<uint8_t *> self.data_ptr)[x * self.strides[1] + y * self.strides[0] + c * self.strides[2]]
+        elif self.dtype == 2:
+            return (
+                <id_t *> (<char *> self.data_ptr + x * self.strides[1] + y * self.strides[0] + c * self.strides[2])
+            )[0]
+        else:
+            return (<char *> self.data_ptr)[x * self.strides[1] + y * self.strides[0] + c * self.strides[2]]
+
+    cdef set_value(self, int x, int y, int c, object value):
+        cdef uint8_t val_ui8
+        cdef id_t val_id
+        cdef char val_char
+        if self.dtype == 1:
+            val_ui8 = value
+            (<uint8_t *> self.data_ptr)[x * self.strides[1] + y * self.strides[0] + c * self.strides[2]] = val_ui8
+        elif self.dtype == 2:
+            if value < 0:
+                val_id = 0
+            else:
+                val_id = value
+            (
+                <id_t *> (<char *> self.data_ptr + x * self.strides[1] + y * self.strides[0] + c * self.strides[2])
+            )[0] = val_id
+        else:
+            val_char = value
+            (<char *> self.data_ptr)[x * self.strides[1] + y * self.strides[0] + c * self.strides[2]] = val_char
+
+    # noinspection DuplicatedCode
+    def __getitem__(self, index: tuple[int, int] | tuple[int, int, int]) -> int | tuple[int, ...]:
+        if not isinstance(index, tuple) or len(index) < 2 or len(index) > 3:
+            raise TypeError("Invalid index type, must be a tuple of length 2 or 3")
+        x, y = index[:2]
+        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+            raise IndexError("Index out of range, x and y must be in the range of the image")
+        if len(index) == 2:
+            if self.channels == 1:
+                return self.get_value(x, y, 0)
+            return tuple(self.get_value(x, y, c) for c in range(self.channels))
+        c = index[2]
+        if c < 0 or c >= self.channels:
+            raise IndexError("Index out of range, c must be in the range of the image channels")
+        return self.get_value(x, y, c)
+
+    # noinspection DuplicatedCode
+    def __setitem__(self, index: tuple[int, int] | tuple[int, int, int], value: int | tuple[int, ...]) -> None:
+        if not isinstance(index, tuple) or len(index) < 2 or len(index) > 3:
+            raise TypeError("Invalid index type, must be a tuple of length 2 or 3")
+        x, y = index[:2]
+        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+            raise IndexError("Index out of range, x and y must be in the range of the image")
+        if len(index) == 2:
+            if self.channels == 1 and not isinstance(value, tuple):
+                self.set_value(x, y, 0, value)
+                return
+            for c in range(self.channels):
+                self.set_value(x, y, c, value[c])
+            return
+        c = index[2]
+        if c < 0 or c >= self.channels:
+            raise IndexError("Index out of range, c must be in the range of the image channels")
+        self.set_value(x, y, c, value)
+
+    def __iter__(self) -> Generator[tuple[int, ...], None]:
+        for y in range(self.height):
+            for x in range(self.width):
+                yield self[x, y]
+
+    def __len__(self) -> int:
+        return self.width * self.height * self.channels
 
 cdef class ColumnWorker:
     cdef CMap.CColumnWorker * c_worker
@@ -309,6 +410,90 @@ cdef class MapOwnerLabel:
     @property
     def count(self):
         return self._c_data.count
+
+cdef class OwnerImage:
+    cdef BufferWrapper _buffer
+
+    def __init__(self, buffer: BufferWrapper):
+        self._buffer = buffer
+
+    def as_ndarray(self):
+        return self._buffer.as_ndarray()
+
+    def __getitem__(self, index: tuple[int, int]) -> int | None:
+        val = self._buffer[index]
+        if val == 0:
+            return None
+        return val
+
+    def __setitem__(self, index: tuple[int, int], value: int | None) -> None:
+        if value is None:
+            value = 0
+        self._buffer[index] = value
+
+    def __len__(self):
+        return len(self._buffer)
+
+    def save(self, path: Path | os.PathLike[str] | str, compressed=True) -> None:
+        import struct
+        if not isinstance(path, Path):
+            path = Path(path)
+        if not path.parent.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+        cdef StreamWriter stream
+        with StreamWriter(path, compressed=compressed) as stream:
+            if compressed:
+                stream.c_write(b'SOVCV1.0')
+            else:
+                stream.c_write(b'SOVNV1.0')
+            stream.start_compression()
+            stream.c_write(struct.pack(">II", self._buffer.width, self._buffer.height))
+            for x in range(self._buffer.width):
+                for y in range(self._buffer.height):
+                    val = self._buffer[x, y]
+                    if val == 0:
+                        val = -1
+                    stream.c_write(struct.pack(">q", val))
+
+    @staticmethod
+    cdef BufferWrapper _load_from_file(path: Path):
+        import struct
+        cdef BufferWrapper buffer = BufferWrapper()  # type: BufferWrapper
+        cdef void * data_ptr = NULL
+        cdef StreamReader stream = StreamReader(path, compressed=False)
+        with stream:
+            header = stream.read(8)
+            if header not in (b'SOVCV1.0', b'SOVNV1.0'):
+                raise ValueError("Invalid file header")
+            compressed = header == b'SOVCV1.0'
+            in_stream = None
+            if compressed:
+                stream.enable_compression()
+            stream.start_decompression()
+            # Read width and height as int
+            width, height = struct.unpack(">II", stream.read(8))
+            if width <= 0 or height <= 0:
+                raise ValueError("Invalid image size")
+            # Create buffer
+            data_ptr = malloc(width * height * sizeof(id_t))
+            if data_ptr is NULL:
+                raise MemoryError("Failed to allocate memory")
+            buffer.set_data(width, height, data_ptr, 1, 2)
+            # Read data
+            for x in range(width):
+                for y in range(height):
+                    buffer[x, y] = struct.unpack(">q", stream.read(8))[0]
+        return buffer
+
+    @staticmethod
+    def load_from_file(path: Path | os.PathLike[str] | str) -> OwnerImage:
+        if not isinstance(path, Path):
+            path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError("File not found")
+        buffer = OwnerImage._load_from_file(path)
+        # noinspection PyTypeChecker
+        return OwnerImage(buffer)
 
 cdef class SovMap:
     # Ok, so these two attributes are important and need to be handled very carefully to avoid memory leaks or
@@ -520,11 +705,21 @@ cdef class SovMap:
             return None
         width = self.c_map.get_width()
         height = self.c_map.get_height()
-        image_base = ImageWrapper()
-        image_base.set_data(width, height, data)
+        image_base = BufferWrapper()
+        image_base.set_data(width, height, data, 4, 1)
         return image_base
 
-    def get_image(self) -> ImageWrapper | None:
+    cdef _retrieve_owner_buffer(self):
+        cdef id_t * data = self.c_map.create_owner_image()
+        if data == NULL:
+            return None
+        width = self.c_map.get_width()
+        height = self.c_map.get_height()
+        image_base = BufferWrapper()
+        image_base.set_data(width, height, data, 1, 2)
+        return image_base
+
+    def get_image(self) -> BufferWrapper | None:
         """
         Get the image as a buffer. This method will remove the image from the map, further calls to this method will
         return None. The buffer wrapper provides already two methods to convert the image to a Pillow image or a numpy
@@ -584,6 +779,9 @@ cdef class SovMap:
             if image is None:
                 raise ValueError("No image available")
             cv2.imwrite(str(path), image)
+
+    def get_owner_map(self):
+        return self._retrieve_owner_buffer()
 
     def update_size(self, width: int | None = None, height: int | None = None, sample_rate: int | None = None) -> None:
         """

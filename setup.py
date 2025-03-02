@@ -12,6 +12,12 @@ extensions = [
         include_dirs=["cpp"],
         language="c++",
         extra_compile_args=["-std=c++17", "/std:c++17"]
+    ),
+    Extension(
+        name="bluemap.stream",
+        sources=[
+            "bluemap/stream.pyx",
+        ]
     )
 ]
 

@@ -269,6 +269,8 @@ namespace bluemap {
         map->paste_cache(start_x, row_offset, cache, height - row_offset);
     }
 
+    Map::MapOwnerLabel::MapOwnerLabel() = default;
+
     Map::MapOwnerLabel::MapOwnerLabel(const id_t owner_id): owner_id(owner_id) {
     }
 
@@ -390,17 +392,23 @@ namespace bluemap {
     }
 
     void Map::load_data(const std::vector<OwnerData> &owners, const std::vector<SolarSystemData> &solar_systems,
-        const std::vector<JumpData> &jumps) {
+                        const std::vector<JumpData> &jumps) {
         std::unique_lock lock(map_mutex);
         for (const auto &owner_data: owners) {
-            this->owners[owner_data.id] = new Owner(owner_data.id,"", owner_data.color.red,
+            this->owners[owner_data.id] = new Owner(owner_data.id, "", owner_data.color.red,
                                                     owner_data.color.green, owner_data.color.blue, owner_data.npc);
         }
         for (const auto &solar_system_data: solar_systems) {
             this->solar_systems[solar_system_data.id] = new SolarSystem(solar_system_data.id,
-                solar_system_data.constellation_id, solar_system_data.region_id, solar_system_data.x,
-                solar_system_data.y, solar_system_data.has_station, solar_system_data.sov_power,
-                solar_system_data.owner == 0 ? nullptr : this->owners[solar_system_data.owner]);
+                                                                        solar_system_data.constellation_id,
+                                                                        solar_system_data.region_id,
+                                                                        solar_system_data.x,
+                                                                        solar_system_data.y,
+                                                                        solar_system_data.has_station,
+                                                                        solar_system_data.sov_power,
+                                                                        solar_system_data.owner == 0
+                                                                            ? nullptr
+                                                                            : this->owners[solar_system_data.owner]);
         }
         for (const auto &[sys_from, sys_to]: jumps) {
             connections[sys_from].push_back(this->solar_systems[sys_to]);
@@ -544,7 +552,7 @@ namespace bluemap {
                 if (x == 1335 && y == 25) {
                     LOG(owner_id << " into " << (x + y * width))
                 }
-                if ( owner_id == -1) {
+                if (owner_id == -1) {
                     old_owners_image.get()[x + y * width] = 0;
                 } else {
                     old_owners_image.get()[x + y * width] = owner_id;
@@ -575,12 +583,12 @@ namespace bluemap {
         image.write(filename.c_str());
     }
 
-    uint8_t * Map::retrieve_image() {
+    uint8_t *Map::retrieve_image() {
         std::unique_lock lock(map_mutex);
         return image.retrieve_data();
     }
 
-    id_t * Map::create_owner_image() const {
+    id_t *Map::create_owner_image() const {
         const auto owner_image = new id_t[width * height];
         for (unsigned int x = 0; x < width; ++x) {
             for (unsigned int y = 0; y < height; ++y) {
@@ -595,11 +603,27 @@ namespace bluemap {
         return owner_image;
     }
 
+    void Map::set_old_owner_image(id_t *old_owner_image, const unsigned int width, const unsigned int height) {
+        std::unique_lock lock(map_mutex);
+        this->old_owners_image = std::unique_ptr<id_t[]>(old_owner_image);
+        if (this->width != width || this->height != height) {
+            this->old_owners_image = nullptr;
+            throw std::runtime_error(
+                "Invalid dimensions for old owner image, expected " +
+                std::to_string(this->width) + "x" + std::to_string(this->height) + " but got " +
+                std::to_string(width) + "x" + std::to_string(height));
+        }
+    }
+
     unsigned int Map::get_width() const {
         return width;
     }
 
     unsigned int Map::get_height() const {
         return height;
+    }
+
+    bool Map::has_old_owner_image() const {
+        return old_owners_image != nullptr;
     }
 } // EveMap
