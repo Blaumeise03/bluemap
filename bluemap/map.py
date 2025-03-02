@@ -1,10 +1,9 @@
-
 import os
 
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 
-from bluemap.wrapper import Map, ColumnWorker, SolarSystem, Owner, ImageWrapper
+from bluemap.wrapper import Map, ColumnWorker, SolarSystem, Owner, ImageWrapper, MapOwnerLabel
 
 
 class SovMap:
@@ -27,11 +26,36 @@ class SovMap:
         self._map.load_data(owner_data, system_data, jump_data)
 
     def render(self, thread_count: int = 1) -> None:
+        """
+        Render the map. This method will calculate the influence of each owner and render the map. The rendering is done
+        in parallel using the given number of threads.
+
+        Warning: Calling this method while a rendering is already in progress is not safe and is considered undefined
+        behavior.
+        :param thread_count:
+        :return:
+        """
         if not self._map.calculated:
             self._map.calculate_influence()
         with ThreadPoolExecutor(max_workers=thread_count) as pool:
+            # If you want to implement your own rendering, be carefull with the ColumnWorker class. It's not meant to be
+            # used on its own. It does only hold a weak reference to its map object - if the map object goes out of
+            # scope and gets garbage collected, the ColumnWorker will not work anymore. Disconnected workers might raise
+            # an exception, but this is not guaranteed.
+            #
+            # DEALLOCATION OF THE MAP OBJECT WHILE A RENDERING IS IN PROGRESS IS NOT SAFE AND WILL SEGFAULT! So make
+            # sure to always hold a reference to the map before creating workers.
+            #
+            # Additionally, the ColumnWorker is only partially thread safe. While it *should* be okay-ish, creating
+            # multiple workers for the same column is not recommended as not all operations are secured by locks
+            # because they are not needed for the rendering process with disjunct workers. You can create custom
+            # workers, but it is recommended to use create_workers once per map. Also, between creation of the workers
+            # and the rendering, the map should not be modified, as the workers won't be updated (i.e. size).
             workers = self._map.create_workers(thread_count)
             pool.map(ColumnWorker.render, workers)
+
+    def calculate_labels(self) -> list[MapOwnerLabel]:
+        return self._map.calculate_labels()
 
     @property
     def solar_systems(self) -> dict[int, SolarSystem]:
@@ -65,6 +89,55 @@ class SovMap:
         """
         return self._map.connections
 
+    @property
+    def width(self) -> int:
+        """
+        The width of the map in pixels.
+        :return:
+        """
+        return self._map.width
+
+    @width.setter
+    def width(self, value: int) -> None:
+        self._map.width = value
+
+    @property
+    def height(self) -> int:
+        """
+        The height of the map in pixels.
+        :return:
+        """
+        return self._map.height
+
+    @height.setter
+    def height(self, value: int) -> None:
+        self._map.height = value
+
+    @property
+    def resolution(self) -> tuple[int, int]:
+        """
+        The resolution of the map in pixels.
+        :return:
+        """
+        return self._map.resolution
+
+    @resolution.setter
+    def resolution(self, value: tuple[int, int]) -> None:
+        self._map.resolution = value
+
+    @property
+    def scale(self) -> float:
+        """
+        The scale of the map. Warning: The scale is recalculated every time the other properties are changed. So if you
+        want to use a custom scale, set it last.
+        :return:
+        """
+        return self._map.scale
+
+    @scale.setter
+    def scale(self, value: float) -> None:
+        self._map.scale = value
+
     def get_image(self) -> ImageWrapper | None:
         """
         Get the image as a buffer. This method will remove the image from the map, further calls to this method will
@@ -80,7 +153,6 @@ class SovMap:
         :return: the image buffer if available, None otherwise
         """
         return self._map.get_image()
-
 
     def save(self, path: Path | os.PathLike[str] | str) -> None:
         """

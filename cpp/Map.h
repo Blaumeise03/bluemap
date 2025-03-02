@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <utility>
 #include <vector>
 
@@ -138,9 +139,6 @@ namespace bluemap {
     class Map {
         unsigned int width = 928 * 2;
         unsigned int height = 1024 * 2;
-        unsigned int offset_x = 208;
-        unsigned int offset_y = 0;
-        double scale = 4.8445284569785E17 / ((width - 20) / 2.0);
         unsigned int sample_rate = 8;
 
         /// How fast the influence falls off with distance, 0.3 = reduced to 30% per jump
@@ -150,6 +148,7 @@ namespace bluemap {
         std::map<id_t, SolarSystem *> solar_systems = {};
         std::vector<SolarSystem *> sov_solar_systems = {};
         std::map<id_t, std::vector<SolarSystem *> > connections = {};
+        mutable std::shared_mutex map_mutex;
 
         std::mutex image_mutex;
         Image image = Image(width, height);
@@ -173,7 +172,8 @@ namespace bluemap {
             unsigned int row_offset = 0;
 
             Image cache;
-            std::vector<SolarSystem *> sov_solar_systems;
+
+            std::mutex render_mutex;
 
             void flush_cache();
 
@@ -200,6 +200,8 @@ namespace bluemap {
             unsigned long long y = 0;
             size_t count = 0;
 
+            MapOwnerLabel() = default;
+
             explicit MapOwnerLabel(id_t owner_id);
         };
 
@@ -219,6 +221,8 @@ namespace bluemap {
         Map();
 
         ~Map();
+
+        void update_size(unsigned int width, unsigned int height, unsigned int sample_rate);
 
         void load_data(const std::string &filename);
 
@@ -255,12 +259,6 @@ namespace bluemap {
         [[nodiscard]] unsigned int get_width() const;
 
         [[nodiscard]] unsigned int get_height() const;
-
-        [[nodiscard]] unsigned int get_offset_x() const;
-
-        [[nodiscard]] unsigned int get_offset_y() const;
-
-        [[nodiscard]] double get_scale() const;
     };
 } // bluemap
 

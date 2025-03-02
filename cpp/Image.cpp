@@ -7,7 +7,6 @@
 #include "stb_image_write.h"
 #endif
 
-#include <cassert>
 #include <cstdint>
 #include <stdexcept>
 
@@ -29,6 +28,13 @@ Image::Image(const unsigned int width, const unsigned int height) : data(nullptr
 
 Image::~Image() {
     delete[] data;
+}
+
+void Image::resize(const unsigned int width, const unsigned int height) {
+    delete[] data;
+    this->width = width;
+    this->height = height;
+    alloc();
 }
 
 void Image::set_pixel(const unsigned int x, const unsigned int y, const uint8_t r, const uint8_t g,

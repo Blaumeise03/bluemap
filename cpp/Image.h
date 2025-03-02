@@ -38,6 +38,8 @@ public:
 
     ~Image();
 
+    void resize(unsigned int width, unsigned int height);
+
     void alloc();
 
     void set_pixel(unsigned int x, unsigned int y, uint8_t r, uint8_t g, uint8_t b) const;

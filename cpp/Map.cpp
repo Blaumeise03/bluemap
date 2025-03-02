@@ -146,7 +146,6 @@ namespace bluemap {
                                                                end_x(end_x), cache(end_x - start_x, 16) {
         assert(map != nullptr);
         assert(start_x < end_x);
-        this->sov_solar_systems = map->sov_solar_systems;
         this->render_old_owners = map->old_owners_image != nullptr;
     }
 
@@ -241,6 +240,9 @@ namespace bluemap {
     }
 
     void Map::ColumnWorker::render() {
+        std::lock_guard render_lock(render_mutex);
+        std::shared_lock map_lock(map->map_mutex);
+
         const unsigned int width = end_x - start_x;
         const unsigned int height = map->get_height();
         std::vector<Owner *> this_row(width);
@@ -311,6 +313,7 @@ namespace bluemap {
     }
 
     Map::~Map() {
+        std::unique_lock lock(map_mutex);
         for (auto &[_, owner]: owners) {
             delete owner;
         }
@@ -319,7 +322,18 @@ namespace bluemap {
         }
     }
 
+    void Map::update_size(const unsigned int width, const unsigned int height, const unsigned int sample_rate) {
+        std::unique_lock lock(map_mutex);
+        this->width = width;
+        this->height = height;
+        this->sample_rate = sample_rate;
+        image.resize(width, height);
+        owner_image = std::make_unique<Owner *[]>(width * height);
+        old_owners_image = nullptr;
+    }
+
     void Map::load_data(const std::string &filename) {
+        std::unique_lock lock(map_mutex);
         std::ifstream file(filename, std::ios::binary);
         if (!file) {
             throw std::runtime_error("Unable to open file");
@@ -377,6 +391,7 @@ namespace bluemap {
 
     void Map::load_data(const std::vector<OwnerData> &owners, const std::vector<SolarSystemData> &solar_systems,
         const std::vector<JumpData> &jumps) {
+        std::unique_lock lock(map_mutex);
         for (const auto &owner_data: owners) {
             this->owners[owner_data.id] = new Owner(owner_data.id,"", owner_data.color.red,
                                                     owner_data.color.green, owner_data.color.blue, owner_data.npc);
@@ -393,6 +408,7 @@ namespace bluemap {
     }
 
     void Map::calculate_influence() {
+        std::unique_lock lock(map_mutex);
         if (sov_solar_systems.empty()) {
             for (const auto &sys: solar_systems) {
                 if (sys.second->get_owner() != nullptr) {
@@ -440,6 +456,7 @@ namespace bluemap {
     }
 
     std::vector<Map::MapOwnerLabel> Map::calculate_labels() {
+        std::unique_lock lock(map_mutex);
         std::vector<MapOwnerLabel> labels;
         // Iterate over all pixels according to the sample rate
         for (unsigned int y = 0; y < height; y += sample_rate) {
@@ -500,6 +517,7 @@ namespace bluemap {
     }
 
     void Map::load_old_owners(const std::string &filename) {
+        std::unique_lock lock(map_mutex);
         std::ifstream file(filename, std::ios::binary);
         if (!file) {
             throw std::runtime_error("Unable to open file");
@@ -553,10 +571,12 @@ namespace bluemap {
     }
 
     void Map::save(const std::string &filename) const {
+        std::unique_lock lock(map_mutex);
         image.write(filename.c_str());
     }
 
     uint8_t * Map::retrieve_image() {
+        std::unique_lock lock(map_mutex);
         return image.retrieve_data();
     }
 
@@ -581,17 +601,5 @@ namespace bluemap {
 
     unsigned int Map::get_height() const {
         return height;
-    }
-
-    unsigned int Map::get_offset_x() const {
-        return offset_x;
-    }
-
-    unsigned int Map::get_offset_y() const {
-        return offset_y;
-    }
-
-    double Map::get_scale() const {
-        return scale;
     }
 } // EveMap

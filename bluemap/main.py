@@ -100,9 +100,13 @@ def main():
     sov_map.load_data(owners, systems, connections)
     print("Rendering map...")
     sov_map.render(thread_count=16)
+    print("Calculating labels...")
+    labels = sov_map.calculate_labels()
+    for label in labels:
+        print(f"{label.owner_id}: ({label.x}, {label.y}) with {label.count} pixels")
     print("Saving map...")
     sov_map.save("influence.png")
     print("Done.")
 
 if __name__ == "__main__":
-    main()
+    mem_test()
