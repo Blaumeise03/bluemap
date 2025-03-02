@@ -1,5 +1,7 @@
 # distutils: language = c++
+import os
 import weakref
+from pathlib import Path
 
 from libc.stdlib cimport free
 from libcpp.string cimport string
@@ -148,7 +150,7 @@ cdef class ColumnWorker:
     cdef CMap.CColumnWorker * c_worker
     cdef object _map
 
-    def __cinit__(self, Map map_, unsigned int start_x, unsigned int end_x):
+    def __cinit__(self, SovMap map_, unsigned int start_x, unsigned int end_x):
         if not map:
             raise ValueError("Map is not initialized")
         self.c_worker = map_.c_map.create_worker(start_x, end_x)
@@ -156,7 +158,7 @@ cdef class ColumnWorker:
         map_.add_worker(self)
 
     def __dealloc__(self):
-        cdef Map map_ = self._map()
+        cdef SovMap map_ = self._map()
         if map_ is not None:
             map_.remove_worker(self)
         del self.c_worker
@@ -308,7 +310,7 @@ cdef class MapOwnerLabel:
     def count(self):
         return self._c_data.count
 
-cdef class Map:
+cdef class SovMap:
     # Ok, so these two attributes are important and need to be handled very carefully to avoid memory leaks or
     # segfaults. The way it works: On the C++ code, every worker has a reference to the map. However, only the map is
     # responsible for managing memory. So we need to be carefull when deleting the map, while workers are still alive.
@@ -384,7 +386,7 @@ cdef class Map:
     cdef void add_worker(self, worker):
         self.workers.append(worker)
 
-    ### Public Interface ###
+    ### Public Interface (more or less) ###
 
     def load_data_from_file(self, filename: str):
         # noinspection PyTypeChecker
@@ -393,22 +395,6 @@ cdef class Map:
     def calculate_influence(self):
         self.c_map.calculate_influence()
         self._calculated = True
-
-    @property
-    def calculated(self):
-        return self._calculated
-
-    @property
-    def owners(self):
-        return self._owners
-
-    @property
-    def systems(self):
-        return self._systems
-
-    @property
-    def connections(self):
-        return self._connections
 
     def create_workers(self, count: int):
         cdef unsigned int width = self.c_map.get_width()
@@ -427,6 +413,14 @@ cdef class Map:
         self.c_map.save(path.encode('utf-8'))
 
     def load_data(self, owners: list, systems: list, connections: list):
+        """
+        Load data into the map. Only systems inside the map will be saved, other systems will be ignored.
+
+        :param owners: a list of owner data, each entry is a dict with the keys 'id' (int), 'color' (3-tuple) and 'npc' (bool)
+        :param systems: a list of system data, each entry is a dict with the keys 'id', 'x', 'z', 'constellation_id', 'region_id', 'has_station', 'sov_power' and 'owner'
+        :param connections: a list of jump data, each entry is a tuple of two system IDs
+        :return:
+        """
         cdef vector[COwnerData] owner_data
         cdef vector[CSolarSystemData] system_data
         cdef vector[CJumpData] jump_data
@@ -441,6 +435,7 @@ cdef class Map:
                 color=owner['color'],
                 npc=owner['npc'])
             self._owners[owner_obj.id] = owner_obj
+            # noinspection PyUnresolvedReferences
             owner_data.push_back(owner_obj.c_data)
 
         cdef double x, y, z, width, height, offset_x, offset_y, scale
@@ -471,19 +466,52 @@ cdef class Map:
                 sov_power=system['sov_power'],
                 owner=system['owner'])
             self._systems[system_obj.id] = system_obj
+            # noinspection PyUnresolvedReferences
             system_data.push_back(system_obj.c_data)
 
         for connection in connections:
             if connection[0] in skipped or connection[1] in skipped:
                 continue
+            # noinspection PyUnresolvedReferences
             jump_data.push_back(CJumpData(sys_from=connection[0], sys_to=connection[1]))
             self._connections.append(connection)
 
         self.c_map.load_data(owner_data, system_data, jump_data)
         print("Skipped %d systems" % len(skipped))
 
+    def render(self, thread_count: int = 1) -> None:
+        """
+        Render the map. This method will calculate the influence of each owner and render the map. The rendering is done
+        in parallel using the given number of threads.
+
+        Warning: Calling this method while a rendering is already in progress is not safe and is considered undefined
+        behavior.
+        :param thread_count:
+        :return:
+        """
+        if not self._calculated:
+            self.calculate_influence()
+        from concurrent.futures.thread import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=thread_count) as pool:
+            # If you want to implement your own rendering, be carefull with the ColumnWorker class. It's not meant to be
+            # used on its own. It does only hold a weak reference to its map object - if the map object goes out of
+            # scope and gets garbage collected, the ColumnWorker will not work anymore. Disconnected workers might raise
+            # an exception, but this is not guaranteed.
+            #
+            # DEALLOCATION OF THE MAP OBJECT WHILE A RENDERING IS IN PROGRESS IS NOT SAFE AND WILL SEGFAULT! So make
+            # sure to always hold a reference to the map before creating workers.
+            #
+            # Additionally, the ColumnWorker is only partially thread safe. While it *should* be okay-ish, creating
+            # multiple workers for the same column is not recommended as not all operations are secured by locks
+            # because they are not needed for the rendering process with disjunct workers. You can create custom
+            # workers, but it is recommended to use create_workers once per map. Also, between creation of the workers
+            # and the rendering, the map should not be modified, as the workers won't be updated (i.e. size).
+            workers = self.create_workers(thread_count)
+            pool.map(ColumnWorker.render, workers)
+
     def calculate_labels(self) -> list[MapOwnerLabel]:
         cdef vector[CMap.CMapOwnerLabel] labels = self.c_map.calculate_labels()
+        # noinspection PyTypeChecker
         return [MapOwnerLabel.from_c_data(label) for label in labels]
 
     cdef _retrieve_image_buffer(self):
@@ -496,27 +524,75 @@ cdef class Map:
         image_base.set_data(width, height, data)
         return image_base
 
-    def get_image_as_ndarray(self):
-        return self._retrieve_image_buffer().as_ndarray()
-
     def get_image(self) -> ImageWrapper | None:
         """
         Get the image as a buffer. This method will remove the image from the map, further calls to this method will
-        return None.
+        return None. The buffer wrapper provides already two methods to convert the image to a Pillow image or a numpy
+        array. But it can be used by any function that supports the buffer protocol.
 
-        The image buffer can be passed to PIL.Image.frombuffer to create an image:
+        See https://docs.python.org/3/c-api/buffer.html
 
-        >>> image = map.get_image()
-        >>> img = PIL.Image.frombuffer('RGBA', image.size, image, 'raw', 'RGBA', 0, 1)
+        >>> import PIL.Image
+        >>> sov_map = SovMap()
+        >>> #...
+        >>> image = sov_map.get_image().as_pil_image()
 
         Or to create a numpy array:
-        >>> image = map.get_image().as_ndarray()
+
+        >>> image = sov_map.get_image().as_ndarray()
 
         :return: the image buffer if available, None otherwise
         """
         return self._retrieve_image_buffer()
 
-    def update_size(self, width: int | None = None, height: int | None = None, sample_rate: int | None = None):
+    def save(self, path: Path | os.PathLike[str] | str) -> None:
+        """
+        Save the image to a file. Requires Pillow or OpenCV to be installed. Use the get_image method if you want to
+        get better control over the image.
+
+        This method will remove the image from the map, further calls to get_image will return None and further calls
+        to save will raise a ValueError.
+
+        :param path:
+        :return:
+        """
+        if not isinstance(path, Path):
+            path = Path(path)
+        if not path.parent.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+        strategy = None
+        try:
+            import PIL
+            strategy = "PIL"
+        except ImportError:
+            try:
+                import cv2
+                strategy = "cv2"
+            except ImportError:
+                pass
+        if strategy is None:
+            raise ImportError(
+                "Please install Pillow (pip install Pillow) or OpenCV (pip install opencv-python) to save images.")
+        if strategy == "PIL":
+            image = self.get_image().as_pil_image()
+            if image is None:
+                raise ValueError("No image available")
+            image.save(path)
+        elif strategy == "cv2":
+            import cv2
+            image = self.get_image().as_ndarray()
+            if image is None:
+                raise ValueError("No image available")
+            cv2.imwrite(str(path), image)
+
+    def update_size(self, width: int | None = None, height: int | None = None, sample_rate: int | None = None) -> None:
+        """
+        Update the size of the map. This will recalculate the scale automatically.
+        :param width: the new width (or None to keep the current width)
+        :param height: the new height (or None to keep the current height)
+        :param sample_rate: the new sample rate (or None to keep the current sample rate)
+        :return:
+        """
         if width is not None:
             self._width = width
         if height is not None:
@@ -528,16 +604,76 @@ cdef class Map:
         self._sync_data()
 
     @property
+    def calculated(self):
+        return self._calculated
+
+    @property
+    def systems(self) -> dict[int, SolarSystem]:
+        """
+        Get a dictionary of all solar systems in the map. The key is the system ID, the value is the SolarSystem object.
+
+        Modifications to the dict or the SolarSystem objects will not be reflected in the map. Modifications might
+        cause unexpected behavior.
+        :return:
+        """
+        return self._systems
+
+    @property
+    def owners(self) -> dict[int, Owner]:
+        """
+        Get a dictionary of all owners in the map. The key is the owner ID, the value is the Owner object.
+
+        Modifications to the dict or the Owner objects will not be reflected in the map. Modifications might cause
+        unexpected behavior.
+        :return:
+        """
+        return self._owners
+
+    @property
+    def connections(self) -> list[tuple[int, int]]:
+        """
+        Get a list of all connections in the map. Each connection is a tuple of two system IDs.
+
+        Modifications to the list will not be reflected in the map. Modifications might cause unexpected behavior.
+        :return:
+        """
+        return self._connections
+
+    @property
     def width(self) -> int:
+        """
+        The width of the map in pixels.
+        :return:
+        """
         return self._width
+
+    @width.setter
+    def width(self, value: int):
+        self.update_size(width=value)
 
     @property
     def height(self) -> int:
+        """
+        The height of the map in pixels.
+        :return:
+        """
         return self._height
+
+    @height.setter
+    def height(self, value: int):
+        self.update_size(height=value)
 
     @property
     def resolution(self) -> tuple[int, int]:
+        """
+        The resolution of the map in pixels.
+        :return:
+        """
         return self._width, self._height
+
+    @resolution.setter
+    def resolution(self, value: tuple[int, int]):
+        self.update_size(width=value[0], height=value[1])
 
     @property
     def offset_x(self) -> int:
@@ -555,6 +691,10 @@ cdef class Map:
         """
         return self._sample_rate
 
+    @sample_rate.setter
+    def sample_rate(self, value: int):
+        self.update_size(sample_rate=value)
+
     @property
     def scale(self) -> float:
         """
@@ -564,22 +704,6 @@ cdef class Map:
         :return:
         """
         return self._scale
-
-    @width.setter
-    def width(self, value: int):
-        self.update_size(width=value)
-
-    @height.setter
-    def height(self, value: int):
-        self.update_size(height=value)
-
-    @resolution.setter
-    def resolution(self, value: tuple[int, int]):
-        self.update_size(width=value[0], height=value[1])
-
-    @sample_rate.setter
-    def sample_rate(self, value: int):
-        self.update_size(sample_rate=value)
 
     @scale.setter
     def scale(self, value: float):

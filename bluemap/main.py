@@ -5,7 +5,7 @@ from typing import Any
 import PIL
 from PIL.Image import Image
 
-from bluemap.map import SovMap
+from bluemap.wrapper import SovMap
 
 
 def mem_test():
