@@ -222,6 +222,8 @@ cdef class BufferWrapper:
             raise ValueError("Buffer is not allocated")
         if not isinstance(index, tuple) or len(index) < 2 or len(index) > 3:
             raise TypeError("Invalid index type, must be a tuple of length 2 or 3")
+        cdef int x, y, c
+        c = 0
         x, y = index[:2]
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             raise IndexError("Index out of range, x and y must be in the range of the image")
@@ -240,6 +242,8 @@ cdef class BufferWrapper:
             raise ValueError("Buffer is not allocated")
         if not isinstance(index, tuple) or len(index) < 2 or len(index) > 3:
             raise TypeError("Invalid index type, must be a tuple of length 2 or 3")
+        cdef int x, y, c
+        c = 0
         x, y = index[:2]
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             raise IndexError("Index out of range, x and y must be in the range of the image")
@@ -473,6 +477,8 @@ cdef class OwnerImage:
         cdef StreamReader stream
         # noinspection PyTypeChecker
         stream = StreamReader(path, compressed=False)
+        cdef int x, y, width, height
+        cdef object val
         with stream:
             header = stream.read(8)
             if header not in (b'SOVCV1.0', b'SOVNV1.0'):
@@ -495,7 +501,8 @@ cdef class OwnerImage:
             # Read data
             for x in range(width):
                 for y in range(height):
-                    buffer[x, y] = struct.unpack(">q", stream.read(8))[0]
+                    val = struct.unpack(">q", stream.read(8))[0]
+                    buffer.set_value(x, y, 0, val)
         return buffer
 
     @classmethod
