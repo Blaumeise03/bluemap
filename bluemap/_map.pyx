@@ -138,7 +138,6 @@ cdef class BufferWrapper:
         self.strides[2] = self.itemsize
 
     def __dealloc__(self):
-        print("Buffer deallocated")
         free(self.data_ptr)
         self.data_ptr = NULL
 
@@ -308,7 +307,7 @@ cdef class ColumnWorker:
             self.c_worker.render()
 
 cdef class SolarSystem:
-    cdef CSolarSystemData _c_data
+    cdef CSolarSystemData c_data
 
     def __init__(self, id_: int, constellation_id: int, region_id: int, x: int, y: int, has_station: bool,
                  sov_power: float, owner: int | None):
@@ -322,48 +321,44 @@ cdef class SolarSystem:
             raise TypeError("id, constellation_id and region_id must be ints")
         if type(has_station) is not bool:
             raise TypeError("has_station must be a bool")
-        self._c_data = CSolarSystemData(
+        self.c_data = CSolarSystemData(
             id=id_, constellation_id=constellation_id, region_id=region_id, x=x, y=y,
             has_station=has_station, sov_power=sov_power, owner=owner)
 
     @property
-    def c_data(self):
-        return self._c_data
-
-    @property
     def id(self):
-        return self._c_data.id
+        return self.c_data.id
 
     @property
     def constellation_id(self):
-        return self._c_data.constellation_id
+        return self.c_data.constellation_id
 
     @property
     def region_id(self):
-        return self._c_data.region_id
+        return self.c_data.region_id
 
     @property
     def x(self):
-        return self._c_data.x
+        return self.c_data.x
 
     @property
     def y(self):
-        return self._c_data.y
+        return self.c_data.y
 
     @property
     def has_station(self):
-        return self._c_data.has_station
+        return self.c_data.has_station
 
     @property
     def sov_power(self):
-        return self._c_data.sov_power
+        return self.c_data.sov_power
 
     @property
     def owner(self):
-        return self._c_data.owner
+        return self.c_data.owner
 
 cdef class Owner:
-    cdef COwnerData _c_data
+    cdef COwnerData c_data
 
     def __init__(self, id_: int, color: tuple[int, int, int] | tuple[int, int, int, int], npc: bool):
         if type(id_) is not int:
@@ -372,63 +367,59 @@ cdef class Owner:
             raise TypeError("npc must be a bool")
         if len(color) < 3 or len(color) > 4:
             raise ValueError("color must be a tuple of 3 or 4 ints")
-        self._c_data = COwnerData(
+        self.c_data = COwnerData(
             id=id_, color=Color(
                 red=color[0], green=color[1], blue=color[2],
                 alpha=color[3] if len(color) > 3 else 255
             ), npc=npc)
 
     @property
-    def c_data(self):
-        return self._c_data
-
-    @property
     def id(self):
-        return self._c_data.id
+        return self.c_data.id
 
     @property
     def color(self):
-        return self._c_data.color
+        return self.c_data.color
 
     @property
     def npc(self):
-        return self._c_data.npc
+        return self.c_data.npc
 
 cdef class MapOwnerLabel:
-    cdef CMap.CMapOwnerLabel _c_data
+    cdef CMap.CMapOwnerLabel c_data
 
     def __init__(self, owner_id: int = None, x: int = None, y: int = None, count: int = None):
         if owner_id is None and x is None and y is None and count is None:
             return
-        self._c_data.owner_id = owner_id or 0
-        self._c_data.x = x or 0
-        self._c_data.y = y or 0
-        self._c_data.count = count or 0
+        self.c_data.owner_id = owner_id or 0
+        self.c_data.x = x or 0
+        self.c_data.y = y or 0
+        self.c_data.count = count or 0
 
     def __cinit__(self):
-        self._c_data = CMap.CMapOwnerLabel()
+        self.c_data = CMap.CMapOwnerLabel()
 
     @staticmethod
     cdef MapOwnerLabel from_c_data(CMap.CMapOwnerLabel c_data):
         cdef MapOwnerLabel obj = MapOwnerLabel()
-        obj._c_data = c_data
+        obj.c_data = c_data
         return obj
 
     @property
     def owner_id(self):
-        return self._c_data.owner_id
+        return self.c_data.owner_id
 
     @property
     def x(self):
-        return self._c_data.x
+        return self.c_data.x
 
     @property
     def y(self):
-        return self._c_data.y
+        return self.c_data.y
 
     @property
     def count(self):
-        return self._c_data.count
+        return self.c_data.count
 
 cdef class OwnerImage:
     cdef BufferWrapper _buffer
@@ -551,6 +542,11 @@ cdef class SovMap:
     _systems: dict[int, SolarSystem]
     _connections: list[tuple[int, int]]
 
+    color_jump_s = (0, 0, 0xFF, 0x30)
+    color_jump_c = (0xFF, 0, 0, 0x30)
+    color_jump_r = (0xFF, 0, 0xFF, 0x30)
+    color_sys_no_sov = (0xB0, 0xB0, 0xFF)
+
     def __init__(
             self,
             width: int = 928 * 2, height: int = 1024 * 2,
@@ -636,12 +632,13 @@ cdef class SovMap:
         self._systems.clear()
         self._owners.clear()
 
-        cdef object owner_obj
+        cdef Owner owner_obj
         for owner in owners:
             owner_obj = Owner(
                 id_=owner['id'],
                 color=owner['color'],
                 npc=owner['npc'])
+            # noinspection PyTypeChecker
             self._owners[owner_obj.id] = owner_obj
             # noinspection PyUnresolvedReferences
             owner_data.push_back(owner_obj.c_data)
@@ -653,7 +650,7 @@ cdef class SovMap:
         width = self._width
         height = self._height
         cdef object skipped = set()
-        cdef object system_obj
+        cdef SolarSystem system_obj
         for system in systems:
             if system['x'] is None or system['z'] is None:
                 skipped.add(system['id'])
@@ -673,6 +670,7 @@ cdef class SovMap:
                 has_station=system['has_station'],
                 sov_power=system['sov_power'],
                 owner=system['owner'])
+            # noinspection PyTypeChecker
             self._systems[system_obj.id] = system_obj
             #if system_obj.id == 30004550:
             #    print(f"30004550: {system_obj.x}, {system_obj.y}")
@@ -926,23 +924,42 @@ cdef class SovMap:
         :param draw: the ImageDraw object to draw the systems on
         :return:
         """
-        cdef SolarSystem system
+        cdef SolarSystem system, system_a, system_b
+        cdef unsigned int x, y, x1, y1, x2, y2
         for (sys_a, sys_b) in self._connections:
-            x1: int = self._systems[sys_a].x
-            y1: int = self._systems[sys_a].y
-            x2: int = self._systems[sys_b].x
-            y2: int = self._systems[sys_b].y
-            draw.line((x1, y1, x2, y2), fill=(255, 255, 255))
-        for system in self._systems.values():
-            x: int = system.x
-            y: int = system.y
-            if system.sov_power >= 6.0:
-                draw.ellipse((x - 1, y - 1, x + 1, y + 1), fill=(255, 255, 255, 255))
-                draw.rectangle((x - 2, y - 2, x + 2, y + 2), fill=(255, 255, 255, 255))
-            elif system.owner > 0:
-                draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=(255, 255, 255))
+            if sys_a not in self._systems or sys_b not in self._systems:
+                continue
+            system_a = self._systems[sys_a]
+            system_b = self._systems[sys_b]
+            x1 = system_a.c_data.x
+            x2 = system_b.c_data.x
+            y1 = system_a.c_data.y
+            y2 = system_b.c_data.y
+            if system_a.c_data.constellation_id == system_b.c_data.constellation_id:
+                color = self.color_jump_s
+            elif system_a.c_data.region_id == system_b.c_data.region_id:
+                color = self.color_jump_c
             else:
-                draw.ellipse((x - 1, y - 1, x + 1, y + 1), fill=(255, 255, 255))
+                color = self.color_jump_r
+            draw.line((x1, y1, x2, y2), fill=color)
+        cdef Owner owner
+        for system in self._systems.values():
+            x = system.c_data.x
+            y = system.c_data.y
+            color = self.color_sys_no_sov
+            if system.c_data.owner > 0:
+                owner = self._owners.get(system.c_data.owner, None)
+                if owner is not None:
+                    color = (owner.c_data.color.red, owner.c_data.color.green, owner.c_data.color.blue)
+
+            if system.c_data.sov_power >= 6.0:
+                draw.rectangle((x - 2, y, x, y), fill=color)
+                draw.rectangle((x - 2, y - 2, x + 2, y + 2), outline=color)
+            elif system.c_data.owner > 0:
+                draw.rectangle((x - 2, y, x, y), fill=color)
+                draw.rectangle((x - 1, y - 1, x + 1, y + 1), fill=color)
+            else:
+                draw.rectangle((x - 1, y, x, y), fill=color)
 
     @property
     def calculated(self):

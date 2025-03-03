@@ -170,8 +170,10 @@ def main():
     import PIL.Image
     sov_layer = sov_map.get_image().as_pil_image()
     sys_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 0))
+    bg_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 255))
     sov_map.draw_systems(ImageDraw.Draw(sys_layer))
     combined = PIL.Image.alpha_composite(sov_layer, sys_layer)
+    combined = PIL.Image.alpha_composite(bg_layer, combined)
     combined.save("influence.png")
     print("Done.")
 
