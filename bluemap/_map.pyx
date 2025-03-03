@@ -2,7 +2,7 @@
 import os
 import weakref
 from pathlib import Path
-from typing import Generator, TYPE_CHECKING, Union
+from typing import Generator, TYPE_CHECKING, Union, Callable
 
 if TYPE_CHECKING:
     from PIL.ImageDraw import ImageDraw
@@ -71,6 +71,10 @@ cdef extern from "Map.h" namespace "bluemap":
         id_t *create_owner_image() except +
         # Will raise exception if size does not match (ptr will still be deallocated)
         void set_old_owner_image(id_t *old_owner_image, unsigned int width, unsigned int height) except +
+
+        # The fancy shit
+        # Takes a function (double, bool, id_t) -> double
+        void set_sov_power_function(object func)
 
         unsigned int get_width()
         unsigned int get_height()
@@ -609,10 +613,45 @@ cdef class SovMap:
     ### Public Interface (more or less) ###
 
     def load_data_from_file(self, filename: str):
+        """
+
+        This is a blocking operation on the underlying map object.
+        :param filename:
+        :return:
+        """
         # noinspection PyTypeChecker
         self.c_map.load_data(filename.encode('utf-8'))
 
+    def set_sov_power_function(self, func: Callable[[float, bool, int], float] ):
+        """
+        Set the function that calculates the sov power for a system. The function must take three arguments: the sov
+        power of the system according to the data source, a boolean indicating if the system has a station and the owner
+        ID of the system. The function must return the sov power that should be used for the map.
+        The id is 0 if the system has no owner.
+
+        If this function is not set, the default function
+
+        >>> lambda sov_power, _, _ = 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+
+        will be used. This is implemented in the C++ code, however setting a python function has no measurable
+        performance impact. At least if a simple function is used, more complex ones will of course bump up the time.
+        But this penalty only scales with the number of systems and is independent of the resolution of the map. Only
+        the call to calculate_influence will be slower.
+
+        IMPORTANT: THIS FUNCTION MAY NOT CALL ANY FUNCTIONS THAT WILL MODIFY/READ FROM THE MAP. THIS WILL RESULT IN A
+        DEADLOCK. This affects all functions marked with "This is a blocking operation on the underlying map object."
+
+        :param func: the function (double, bool, int) -> double
+        :return:
+        """
+        # noinspection PyTypeChecker
+        self.c_map.set_sov_power_function(func)
+
     def calculate_influence(self):
+        """
+        This is a blocking operation on the underlying map object.
+        :return:
+        """
         self.c_map.calculate_influence()
         self._calculated = True
 
@@ -629,6 +668,11 @@ cdef class SovMap:
         return workers
 
     def save(self, path: str):
+        """
+        This is a blocking operation on the underlying map object.
+        :param path:
+        :return:
+        """
         # noinspection PyTypeChecker
         self.c_map.save(path.encode('utf-8'))
 
@@ -636,6 +680,7 @@ cdef class SovMap:
         """
         Load data into the map. Only systems inside the map will be saved, other systems will be ignored.
 
+        This is a blocking operation on the underlying map object.
         :param owners: a list of owner data, each entry is a dict with the keys 'id' (int), 'color' (3-tuple) and 'npc' (bool). Optionally 'name' (str)
         :param systems: a list of system data, each entry is a dict with the keys 'id', 'x', 'z', 'constellation_id', 'region_id', 'has_station', 'sov_power' and 'owner'
         :param connections: a list of jump data, each entry is a tuple of two system IDs
@@ -741,6 +786,10 @@ cdef class SovMap:
             pool.map(ColumnWorker.render, workers)
 
     def calculate_labels(self) -> None:
+        """
+        This is a blocking operation on the underlying map object.
+        :return:
+        """
         self.owner_labels = self.c_map.calculate_labels()
 
     def get_owner_labels(self) -> list[MapOwnerLabel]:
@@ -784,6 +833,7 @@ cdef class SovMap:
 
         >>> image = sov_map.get_image().as_ndarray()
 
+        This is a blocking operation on the underlying map object.
         :return: the image buffer if available, None otherwise
         """
         return self._retrieve_image_buffer()
@@ -796,6 +846,7 @@ cdef class SovMap:
         This method will remove the image from the map, further calls to get_image will return None and further calls
         to save will raise a ValueError.
 
+        This is a blocking operation on the underlying map object.
         :param path:
         :return:
         """
@@ -844,6 +895,7 @@ cdef class SovMap:
         >>> # OR
         >>> owner_image = sov_map.get_owner_image()
 
+        This is a blocking operation on the underlying map object.
         :return:
         """
         return self._retrieve_owner_buffer()
@@ -854,6 +906,8 @@ cdef class SovMap:
         each pixel. The owner IDs are 0 for None. The owner image can be saved and loaded to/from disk.
 
         See also get_owner_buffer.
+
+        This is a blocking operation on the underlying map object.
         :return:
         """
         return OwnerImage(self._retrieve_owner_buffer())
@@ -864,6 +918,7 @@ cdef class SovMap:
         owners. It is however optional, if the old data is not provided, only the current sov data will be used for
         rendering.
 
+        This is a blocking operation on the underlying map object.
         :param path: the path to save the owner data to
         :param compress: whether to compress the data or not
         :raises ValueError: if no owner image is available
@@ -880,6 +935,7 @@ cdef class SovMap:
         owners. It is however optional, if the old data is not provided, only the current sov data will be used for
         rendering.
 
+        This is a blocking operation on the underlying map object.
         :param path: the path to load the owner data from
         :raises FileNotFoundError: if the file does not exist
         :raises RuntimeError:  if the resolution of the owner data does not match the resolution of the map
@@ -901,6 +957,7 @@ cdef class SovMap:
         unusable after this method is called. If you want to keep the OwnerImage, make a copy of it before calling this
         method.
 
+        This is a blocking operation on the underlying map object.
         :param owner_image: the owner image to load the data from
         :return:
         """
@@ -924,6 +981,8 @@ cdef class SovMap:
     def update_size(self, width: int | None = None, height: int | None = None, sample_rate: int | None = None) -> None:
         """
         Update the size of the map. This will recalculate the scale automatically.
+
+        This is a blocking operation on the underlying map object.
         :param width: the new width (or None to keep the current width)
         :param height: the new height (or None to keep the current height)
         :param sample_rate: the new sample rate (or None to keep the current sample rate)

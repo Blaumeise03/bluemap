@@ -2,6 +2,7 @@
 #define MAP_H
 #include <algorithm>
 #include <fstream>
+#include <functional>
 #include <Image.h>
 #include <iostream>
 #include <map>
@@ -10,6 +11,11 @@
 #include <shared_mutex>
 #include <utility>
 #include <vector>
+
+#if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
+#include <Python.h>
+#include "PyWrapper.h"
+#endif
 
 #if defined(EVE_MAPPER_DEBUG_LOG) && EVE_MAPPER_DEBUG_LOG
 #define LOG(x) std::cout << x << std::endl;
@@ -155,11 +161,18 @@ namespace bluemap {
         std::unique_ptr<Owner *[]> owner_image = nullptr;
         std::unique_ptr<id_t[]> old_owners_image = nullptr;
 
+        // Functional interfaces
+        std::function<double(double, bool, id_t)> sov_power_function;
+
+#if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
+        std::unique_ptr<PyClosure<double, double, bool, id_t> > sov_power_closure = nullptr;
+#endif
+
         void add_influence(SolarSystem *solar_system,
                            Owner *owner,
                            double value,
                            int distance,
-                           std::vector<id_t> &set);
+            std::vector<id_t> &set);
 
     public:
         class ColumnWorker {
@@ -230,6 +243,8 @@ namespace bluemap {
                        const std::vector<SolarSystemData> &solar_systems,
                        const std::vector<JumpData> &jumps);
 
+        void set_sov_power_function(std::function<double(double, bool, id_t)> sov_power_function);
+
         void calculate_influence();
 
         void render();
@@ -265,6 +280,21 @@ namespace bluemap {
         [[nodiscard]] unsigned int get_height() const;
 
         [[nodiscard]] bool has_old_owner_image() const;
+
+        // Python only API
+
+#if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
+        /**
+         * Define the function to calculate the influence of a solar system. For every solar system, this function will
+         * be called with the sov_power, has_station and owner_id as arguments. The function must return a double value
+         * which will be used as the influence value.
+         *
+         * The influence then is spread to neighboring solar systems with a reduced value based on the power_falloff.
+         *
+         * @param closure a python function with the signature (double, bool, int) -> double
+         */
+        void set_sov_power_function(PyObject *closure);
+#endif
     };
 } // bluemap
 

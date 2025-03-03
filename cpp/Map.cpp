@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <filesystem>
+#include <functional>
 #include <queue>
 #include <thread>
 #include <string>
@@ -312,6 +313,16 @@ namespace bluemap {
 
     Map::Map() {
         this->owner_image = std::make_unique<Owner *[]>(width * height);
+
+        sov_power_function = [](double sov_power, bool, id_t) {
+            double influence = 10.0;
+            if (sov_power >= 6.0) {
+                influence *= 6;
+            } else {
+                influence *= sov_power / 2.0;
+            }
+            return influence;
+        };
     }
 
     Map::~Map() {
@@ -415,6 +426,11 @@ namespace bluemap {
         }
     }
 
+    void Map::set_sov_power_function(std::function<double(double, bool, id_t)> sov_power_function) {
+        std::unique_lock lock(map_mutex);
+        this->sov_power_function = std::move(sov_power_function);
+    }
+
     void Map::calculate_influence() {
         std::unique_lock lock(map_mutex);
         if (sov_solar_systems.empty()) {
@@ -426,15 +442,14 @@ namespace bluemap {
         }
         LOG("Calculating influence for " << sov_solar_systems.size() << " solar systems")
         auto sov_orig = sov_solar_systems;
-        for (const auto &solar_system: sov_orig) {
-            double influence = 10.0;
-            int level = 2;
-            if (solar_system->get_sov_power() >= 6.0) {
-                influence *= 6;
-                level = 1;
-            } else {
-                influence *= solar_system->get_sov_power() / 2.0;
-            }
+
+        for (const auto &solar_system : sov_orig) {
+            const id_t owner_id = solar_system->get_owner() == nullptr ? 0 : solar_system->get_owner()->get_id();
+            const double influence = sov_power_function(
+                solar_system->get_sov_power(),
+                solar_system->is_has_station(),
+                owner_id);
+            const int level = (solar_system->get_sov_power() >= 6.0) ? 1 : 2;
             std::vector<id_t> set;
             add_influence(solar_system, solar_system->get_owner(), influence, level, set);
         }
@@ -626,4 +641,17 @@ namespace bluemap {
     bool Map::has_old_owner_image() const {
         return old_owners_image != nullptr;
     }
+#if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
+    void Map::set_sov_power_function(PyObject *closure) {
+        std::unique_lock lock(map_mutex);
+        sov_power_closure = std::make_unique<PyClosure<double, double, bool, id_t>>(closure);
+        if (!sov_power_closure->validate()) {
+            sov_power_closure = nullptr;
+            throw std::runtime_error("Invalid closure, expected a function with signature (double, bool, int) -> double");
+        }
+        sov_power_function = [this](double sov_power, bool has_station, id_t owner_id) {
+            return (*sov_power_closure)(sov_power, has_station, owner_id);
+        };
+    }
+#endif
 } // EveMap

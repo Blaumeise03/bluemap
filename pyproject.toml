@@ -11,8 +11,16 @@ packages = ["bluemap"]
 ext-modules = [
   {name = "bluemap._map", sources = [
     "bluemap/_map.pyx",
-    "cpp/Image.cpp", "cpp/Map.cpp"
-  ], include-dirs = ["cpp"], language = "c++", extra-compile-args = ["-std=c++17", "/std:c++17"]},
+    "cpp/Image.cpp",
+    "cpp/Map.cpp",
+    "cpp/PyWrapper.cpp",
+  ], include-dirs = [
+    "cpp"
+  ], language = "c++", extra-compile-args = [
+    "-std=c++17", "/std:c++17"
+  ], define-macros = [
+    ["EVE_MAPPER_PYTHON", "1"]
+  ]},
   {name = "bluemap.stream", sources = [
     "bluemap/stream.pyx",
   ]},

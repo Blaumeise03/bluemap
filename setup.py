@@ -7,11 +7,13 @@ extensions = [
         sources=[
             "bluemap/_map.pyx",
             "cpp/Image.cpp",
-            "cpp/Map.cpp"
+            "cpp/Map.cpp",
+            "cpp/PyWrapper.cpp",
         ],
         include_dirs=["cpp"],
         language="c++",
-        extra_compile_args=["-std=c++17", "/std:c++17"]
+        extra_compile_args=["-std=c++17", "/std:c++17"],
+        define_macros=[("EVE_MAPPER_PYTHON", "1")]
     ),
     Extension(
         name="bluemap.stream",

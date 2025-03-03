@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 
 from typing import Any
 
@@ -171,11 +172,26 @@ def main():
     sov_map.load_data(owners, systems, connections)
     sov_map.load_old_owner_data("sovchange_2025-02-16.dat")
 
+
+    start = datetime.now()
+    sov_map.set_sov_power_function(
+        lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+    )
+    sov_map.calculate_influence()
+    diff = datetime.now() - start
+    print(f"Influence Calculation took {diff.total_seconds():.4f} seconds.")
+
     print("Rendering map...")
+    start = datetime.now()
     sov_map.render(thread_count=16)
+    diff = datetime.now() - start
+    print(f"Rendering took {diff.total_seconds():.4f} seconds.")
 
     print("Calculating labels...")
+    start = datetime.now()
     sov_map.calculate_labels()
+    diff = datetime.now() - start
+    print(f"Label calculation took {diff.total_seconds():.4f} seconds.")
     #labels = sov_map.get_owner_labels()
     #for label in labels:
     #    print(f"{label.owner_id}: ({label.x}, {label.y}) with {label.count} pixels")
