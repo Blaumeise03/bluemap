@@ -554,6 +554,7 @@ cdef class SovMap:
     _connections: list[tuple[int, int]]
 
     cdef vector[CMap.CMapOwnerLabel] owner_labels
+    cdef vector[Color] c_color_table
 
     color_jump_s = (0, 0, 0xFF, 0x30)
     color_jump_c = (0xFF, 0, 0, 0x30)
@@ -646,6 +647,8 @@ cdef class SovMap:
         self._connections.clear()
         self._systems.clear()
         self._owners.clear()
+        # noinspection PyUnresolvedReferences
+        self.c_color_table.clear()
 
         cdef Owner owner_obj
         for owner in owners:
@@ -655,6 +658,9 @@ cdef class SovMap:
                 npc=owner['npc'])
             if "name" in owner:
                 owner_obj.name = owner["name"]
+            if owner_obj.c_data.color.blue > 0 and owner_obj.c_data.color.green == 0 and owner_obj.c_data.color.red == 0:
+                # noinspection PyUnresolvedReferences
+                self.c_color_table.push_back(owner.c_data.color)
             # noinspection PyTypeChecker
             self._owners[owner_obj.id] = owner_obj
             # noinspection PyUnresolvedReferences
@@ -1015,6 +1021,34 @@ cdef class SovMap:
             draw.text((x, y + 1), owner_name, font=font, fill=black, anchor="mm")
             # Draw text
             draw.text((x, y), owner_name, font=font, fill=color, anchor="mm")
+
+    cdef Color cnext_color(self):
+        cdef int max_ = 0, min_ = 0, cr = 0, cg = 0, cb = 0
+        cdef int r, g, b, dr, dg, db, diff
+        cdef Color c
+        for r in range(0, 255, 4):
+            for g in range(0, 255, 4):
+                for b in range(0, 255, 4):
+                    if r + g + b < 256 or r + g + b > 512:
+                        continue
+                    min_ = -1
+                    # noinspection PyTypeChecker
+                    for c in self.c_color_table:
+                        dr = r - c.red
+                        dg = g - c.green
+                        db = b - c.blue
+                        diff = dr * dr + dg * dg + db * db
+                        if min_ < 0 or diff < min_:
+                            min_ = diff
+                    if min_ > max_:
+                        max_ = min_
+                        cr = r
+                        cg = g
+                        cb = b
+        c = Color(red=cr, green=cg, blue=cb)
+        # noinspection PyUnresolvedReferences
+        self.c_color_table.push_back(c)
+        return c
 
     @property
     def calculated(self):
