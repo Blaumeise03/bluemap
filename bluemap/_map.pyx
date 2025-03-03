@@ -1,9 +1,11 @@
 # distutils: language = c++
 import os
 import weakref
-import zlib
 from pathlib import Path
-from typing import Generator
+from typing import Generator, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL.ImageDraw import ImageDraw
 
 from libc.stdlib cimport free, malloc
 from libcpp cimport bool as cbool
@@ -136,10 +138,13 @@ cdef class BufferWrapper:
         self.strides[2] = self.itemsize
 
     def __dealloc__(self):
+        print("Buffer deallocated")
         free(self.data_ptr)
         self.data_ptr = NULL
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         buffer.buf = <char *> self.data_ptr
         if self.dtype == 1:
             buffer.format = 'B'
@@ -158,11 +163,15 @@ cdef class BufferWrapper:
         buffer.suboffsets = NULL
 
     def as_ndarray(self):
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         # noinspection PyPackageRequirements
         import numpy as np
         return np.array(self, copy=False)
 
     def as_pil_image(self):
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         # noinspection PyPackageRequirements
         import PIL.Image
         # noinspection PyTypeChecker
@@ -176,6 +185,8 @@ cdef class BufferWrapper:
         return self.width, self.height
 
     cdef object get_value(self, int x, int y, int c):
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         if self.dtype == 1:
             return (<uint8_t *> self.data_ptr)[x * self.strides[1] + y * self.strides[0] + c * self.strides[2]]
         elif self.dtype == 2:
@@ -186,6 +197,8 @@ cdef class BufferWrapper:
             return (<char *> self.data_ptr)[x * self.strides[1] + y * self.strides[0] + c * self.strides[2]]
 
     cdef set_value(self, int x, int y, int c, object value):
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         cdef uint8_t val_ui8
         cdef id_t val_id
         cdef char val_char
@@ -206,6 +219,8 @@ cdef class BufferWrapper:
 
     # noinspection DuplicatedCode
     def __getitem__(self, index: tuple[int, int] | tuple[int, int, int]) -> int | tuple[int, ...]:
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         if not isinstance(index, tuple) or len(index) < 2 or len(index) > 3:
             raise TypeError("Invalid index type, must be a tuple of length 2 or 3")
         x, y = index[:2]
@@ -222,6 +237,8 @@ cdef class BufferWrapper:
 
     # noinspection DuplicatedCode
     def __setitem__(self, index: tuple[int, int] | tuple[int, int, int], value: int | tuple[int, ...]) -> None:
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         if not isinstance(index, tuple) or len(index) < 2 or len(index) > 3:
             raise TypeError("Invalid index type, must be a tuple of length 2 or 3")
         x, y = index[:2]
@@ -240,6 +257,8 @@ cdef class BufferWrapper:
         self.set_value(x, y, c, value)
 
     def __iter__(self) -> Generator[tuple[int, ...], None]:
+        if self.data_ptr is NULL:
+            raise ValueError("Buffer is not allocated")
         for y in range(self.height):
             for x in range(self.width):
                 yield self[x, y]
@@ -460,7 +479,9 @@ cdef class OwnerImage:
         import struct
         cdef BufferWrapper buffer = BufferWrapper()  # type: BufferWrapper
         cdef void * data_ptr = NULL
-        cdef StreamReader stream = StreamReader(path, compressed=False)
+        cdef StreamReader stream
+        # noinspection PyTypeChecker
+        stream = StreamReader(path, compressed=False)
         with stream:
             header = stream.read(8)
             if header not in (b'SOVCV1.0', b'SOVNV1.0'):
@@ -478,6 +499,7 @@ cdef class OwnerImage:
             data_ptr = malloc(width * height * sizeof(id_t))
             if data_ptr is NULL:
                 raise MemoryError("Failed to allocate memory")
+            # noinspection PyTypeChecker
             buffer.set_data(width, height, data_ptr, 1, 2)
             # Read data
             for x in range(width):
@@ -491,6 +513,7 @@ cdef class OwnerImage:
             path = Path(path)
         if not path.exists():
             raise FileNotFoundError("File not found")
+        # noinspection PyTypeChecker
         buffer = OwnerImage._load_from_file(path)
         # noinspection PyTypeChecker
         return OwnerImage(buffer)
@@ -538,7 +561,7 @@ cdef class SovMap:
         self._offset_x = offset_x
         self._offset_y = offset_y
         self._sample_rate = 8
-        self._scale = 4.8445284569785E17 / ((self.width - 20) / 2.0)
+        self._scale = 4.8445284569785E17 / ((self.height - 20) / 2.0)
         self._owners = {}
         self._systems = {}
         self._connections = []
@@ -651,6 +674,8 @@ cdef class SovMap:
                 sov_power=system['sov_power'],
                 owner=system['owner'])
             self._systems[system_obj.id] = system_obj
+            #if system_obj.id == 30004550:
+            #    print(f"30004550: {system_obj.x}, {system_obj.y}")
             # noinspection PyUnresolvedReferences
             system_data.push_back(system_obj.c_data)
 
@@ -780,8 +805,98 @@ cdef class SovMap:
                 raise ValueError("No image available")
             cv2.imwrite(str(path), image)
 
-    def get_owner_map(self):
+    def get_owner_buffer(self):
+        """
+        Returns the owner buffer as a BufferWrapper. The buffer contains the owner IDs for each pixel (0 = None).
+        Calling this function will deplet the buffer from the map, further calls to this function, or to get_owner_image
+        will return None.
+
+        The buffer can be used to get a numpy array or a OwnerImage:
+
+        >>> sov_map = SovMap()
+        >>> #...
+        >>> buffer = sov_map.get_owner_buffer()
+        >>> arr = buffer.as_ndarray()
+        >>> owner_image = OwnerImage(buffer)
+        >>> # OR
+        >>> owner_image = sov_map.get_owner_image()
+
+        :return:
+        """
         return self._retrieve_owner_buffer()
+
+    def get_owner_image(self):
+        """
+        Returns the owner image as an OwnerImage. The owner image is a special image that contains the owner IDs for
+        each pixel. The owner IDs are 0 for None. The owner image can be saved and loaded to/from disk.
+
+        See also get_owner_buffer.
+        :return:
+        """
+        return OwnerImage(self._retrieve_owner_buffer())
+
+    def save_owner_data(self, path: Path | os.PathLike[str] | str, compress=True) -> None:
+        """
+        Save the owner data to a file. This data is required for the rendering of the next map to highlight changed
+        owners. It is however optional, if the old data is not provided, only the current sov data will be used for
+        rendering.
+
+        :param path: the path to save the owner data to
+        :param compress: whether to compress the data or not
+        :raises ValueError: if no owner image is available
+        :return:
+        """
+        owner_image = self.get_owner_image()
+        if owner_image is None:
+            raise ValueError("No owner image available")
+        owner_image.save(path, compressed=compress)
+
+    def load_old_owner_data(self, path: Path | os.PathLike[str] | str) -> None:
+        """
+        Load the old owner data from a file. This data is required for the rendering of the next map to highlight changed
+        owners. It is however optional, if the old data is not provided, only the current sov data will be used for
+        rendering.
+
+        :param path: the path to load the owner data from
+        :raises FileNotFoundError: if the file does not exist
+        :raises RuntimeError:  if the resolution of the owner data does not match the resolution of the map
+        :return:
+        """
+        if not isinstance(path, Path):
+            path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError("File not found")
+        cdef OwnerImage owner_image = OwnerImage.load_from_file(path)
+        # noinspection PyTypeChecker
+        self.load_old_owners(owner_image)
+
+    def load_old_owners(self, owner_image: OwnerImage) -> None:
+        """
+        Load the old owner data from an OwnerImage.
+
+        WARNING: This method will take over the ownership of the buffer from the OwnerImage. The OwnerImage will be
+        unusable after this method is called. If you want to keep the OwnerImage, make a copy of it before calling this
+        method.
+
+        :param owner_image: the owner image to load the data from
+        :return:
+        """
+        cdef OwnerImage owner_image_ = owner_image
+        cdef BufferWrapper buffer
+        # noinspection PyProtectedMember
+        buffer = owner_image_._buffer
+        if buffer.dtype != 2:
+            raise ValueError("Invalid owner image data type")
+        # set_old_owner_image is overtaking the ownership of the buffer, so we need to remove the buffer from the
+        # owner image to prevent it from being deallocated
+        cdef id_t * data = <id_t *> buffer.data_ptr
+        buffer.data_ptr = NULL
+        # noinspection PyProtectedMember
+        self.c_map.set_old_owner_image(
+            data,
+            owner_image_._buffer.width,
+            owner_image_._buffer.height)
+
 
     def update_size(self, width: int | None = None, height: int | None = None, sample_rate: int | None = None) -> None:
         """
@@ -797,9 +912,37 @@ cdef class SovMap:
             self._height = height
         if sample_rate is not None:
             self._sample_rate = sample_rate
-        self._sample_rate = sample_rate
-        self._scale = 4.8445284569785E17 / ((self.width - 20) / 2.0)
+        self._scale = 4.8445284569785E17 / ((self.height - 20) / 2.0)
+        # 4.7776414763101575E14
+        print(f"New scale: {self._scale}, width: {self.width}, height: {self.height}")
         self._sync_data()
+
+    # noinspection PyTypeChecker
+    def draw_systems(self, draw: "ImageDraw"):
+        """
+        Draw the solar systems on the map. This method will draw the solar systems on the given ImageDraw object. The
+        ImageDraw object must have the same resolution as the map.
+
+        :param draw: the ImageDraw object to draw the systems on
+        :return:
+        """
+        cdef SolarSystem system
+        for (sys_a, sys_b) in self._connections:
+            x1: int = self._systems[sys_a].x
+            y1: int = self._systems[sys_a].y
+            x2: int = self._systems[sys_b].x
+            y2: int = self._systems[sys_b].y
+            draw.line((x1, y1, x2, y2), fill=(255, 255, 255))
+        for system in self._systems.values():
+            x: int = system.x
+            y: int = system.y
+            if system.sov_power >= 6.0:
+                draw.ellipse((x - 1, y - 1, x + 1, y + 1), fill=(255, 255, 255, 255))
+                draw.rectangle((x - 2, y - 2, x + 2, y + 2), fill=(255, 255, 255, 255))
+            elif system.owner > 0:
+                draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=(255, 255, 255))
+            else:
+                draw.ellipse((x - 1, y - 1, x + 1, y + 1), fill=(255, 255, 255))
 
     @property
     def calculated(self):

@@ -28,10 +28,12 @@ Image::Image(const unsigned int width, const unsigned int height) : data(nullptr
 
 Image::~Image() {
     delete[] data;
+    data = nullptr;
 }
 
 void Image::resize(const unsigned int width, const unsigned int height) {
     delete[] data;
+    data = nullptr;
     this->width = width;
     this->height = height;
     alloc();
