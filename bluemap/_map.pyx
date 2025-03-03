@@ -2,11 +2,13 @@
 import os
 import weakref
 from pathlib import Path
-from typing import Generator, TYPE_CHECKING
+from typing import Generator, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from PIL.ImageDraw import ImageDraw
+    from PIL.ImageFont import FreeTypeFont, ImageFont
 
+from libc.math cimport sqrt
 from libc.stdlib cimport free, malloc
 from libcpp cimport bool as cbool
 from libcpp.string cimport string
@@ -363,6 +365,7 @@ cdef class SolarSystem:
 
 cdef class Owner:
     cdef COwnerData c_data
+    name: str
 
     def __init__(self, id_: int, color: tuple[int, int, int] | tuple[int, int, int, int], npc: bool):
         if type(id_) is not int:
@@ -376,6 +379,7 @@ cdef class Owner:
                 red=color[0], green=color[1], blue=color[2],
                 alpha=color[3] if len(color) > 3 else 255
             ), npc=npc)
+        self.name = str(id_)
 
     @property
     def id(self):
@@ -549,6 +553,8 @@ cdef class SovMap:
     _systems: dict[int, SolarSystem]
     _connections: list[tuple[int, int]]
 
+    cdef vector[CMap.CMapOwnerLabel] owner_labels
+
     color_jump_s = (0, 0, 0xFF, 0x30)
     color_jump_c = (0xFF, 0, 0, 0x30)
     color_jump_r = (0xFF, 0, 0xFF, 0x30)
@@ -575,6 +581,8 @@ cdef class SovMap:
         self.c_map = new CMap()
         self._calculated = False
         self.workers = []
+        # noinspection PyUnresolvedReferences
+        self.owner_labels.clear()
 
     def __dealloc__(self):
         cdef ColumnWorker worker
@@ -627,7 +635,7 @@ cdef class SovMap:
         """
         Load data into the map. Only systems inside the map will be saved, other systems will be ignored.
 
-        :param owners: a list of owner data, each entry is a dict with the keys 'id' (int), 'color' (3-tuple) and 'npc' (bool)
+        :param owners: a list of owner data, each entry is a dict with the keys 'id' (int), 'color' (3-tuple) and 'npc' (bool). Optionally 'name' (str)
         :param systems: a list of system data, each entry is a dict with the keys 'id', 'x', 'z', 'constellation_id', 'region_id', 'has_station', 'sov_power' and 'owner'
         :param connections: a list of jump data, each entry is a tuple of two system IDs
         :return:
@@ -645,6 +653,8 @@ cdef class SovMap:
                 id_=owner['id'],
                 color=owner['color'],
                 npc=owner['npc'])
+            if "name" in owner:
+                owner_obj.name = owner["name"]
             # noinspection PyTypeChecker
             self._owners[owner_obj.id] = owner_obj
             # noinspection PyUnresolvedReferences
@@ -724,10 +734,12 @@ cdef class SovMap:
             workers = self.create_workers(thread_count)
             pool.map(ColumnWorker.render, workers)
 
-    def calculate_labels(self) -> list[MapOwnerLabel]:
-        cdef vector[CMap.CMapOwnerLabel] labels = self.c_map.calculate_labels()
+    def calculate_labels(self) -> None:
+        self.owner_labels = self.c_map.calculate_labels()
+
+    def get_owner_labels(self) -> list[MapOwnerLabel]:
         # noinspection PyTypeChecker
-        return [MapOwnerLabel.from_c_data(label) for label in labels]
+        return [MapOwnerLabel.from_c_data(label) for label in self.owner_labels]
 
     cdef _retrieve_image_buffer(self):
         cdef uint8_t * data = self.c_map.retrieve_image()
@@ -967,6 +979,42 @@ cdef class SovMap:
                 draw.rectangle((x - 1, y - 1, x + 1, y + 1), fill=color)
             else:
                 draw.rectangle((x - 1, y, x, y), fill=color)
+
+    def draw_owner_labels(self, draw: "ImageDraw", base_font: Union["ImageFont", "FreeTypeFont", None] = None) -> None:
+        from PIL import ImageFont
+
+        cdef CMap.CMapOwnerLabel label
+        cdef Owner owner
+        black = (0, 0, 0)
+
+        if base_font is None:
+            base_font = ImageFont.load_default()
+
+        cdef int font_size, x, y
+        # Cache fonts to prevent creating a new font for each label
+        fonts: dict = {}
+        # noinspection PyTypeChecker
+        for label in self.owner_labels:
+            if label.owner_id not in self._owners:
+                continue
+            owner = self._owners[label.owner_id]
+            color = (owner.c_data.color.red, owner.c_data.color.green, owner.c_data.color.blue)
+            owner_name = owner.name
+            font_size = (<int>(sqrt(label.count) / 3.0)) + 8
+            if font_size in fonts:
+                font = fonts[font_size]
+            else:
+                fonts[font_size] = base_font.font_variant(size=font_size)
+                font = fonts[font_size]
+            x = label.x
+            y = label.y
+            # Draw outline
+            draw.text((x - 1, y), owner_name, font=font, fill=black, anchor="mm")
+            draw.text((x + 1, y), owner_name, font=font, fill=black, anchor="mm")
+            draw.text((x, y - 1), owner_name, font=font, fill=black, anchor="mm")
+            draw.text((x, y + 1), owner_name, font=font, fill=black, anchor="mm")
+            # Draw text
+            draw.text((x, y), owner_name, font=font, fill=color, anchor="mm")
 
     @property
     def calculated(self):

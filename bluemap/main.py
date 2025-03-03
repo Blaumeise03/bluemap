@@ -43,8 +43,9 @@ def _create_tables(connection, legacy=False):
             f"""
             CREATE TABLE IF NOT EXISTS evealliances
             (
-                id    INT PRIMARY KEY,
-                color VARCHAR(7)
+                id    INT PRIMARY  KEY,
+                color VARCHAR(7)   NULL,
+                name  VARCHAR(255) NULL
             )
             """)
         cursor.execute(
@@ -92,7 +93,7 @@ def load_data_from_db(
     try:
         with connection.cursor() as cursor:
             # Load owners (alliances)
-            cursor.execute("SELECT id, color FROM evealliances")
+            cursor.execute("SELECT id, color, name FROM evealliances")
             owners = []
             for row in cursor.fetchall():  # type: dict[str, Any]
                 if row['color'] is not None:
@@ -103,6 +104,7 @@ def load_data_from_db(
                 owners.append({
                     'id': row['id'],
                     'color': color,
+                    'name': row['name'],
                     'npc': False,
                 })
 
@@ -151,29 +153,47 @@ def main():
     parser.add_argument("--legacy_db", action="store_true", help="Use legacy database schema")
     args = parser.parse_args()
 
+    from PIL import ImageFont
+
+    try:
+        base_font = ImageFont.truetype(r"C:\Windows\Fonts\VerdanaB.ttf")
+    except OSError:
+        print("Verdana font not found, using default font.")
+
     print("Loading data from database...")
     owners, systems, connections = load_data_from_db(
         args.host, args.user, args.password, args.database,
         legacy=args.legacy_db)
+
     print("Preparing map...")
     sov_map = SovMap()
     sov_map.update_size()
     sov_map.load_data(owners, systems, connections)
     sov_map.load_old_owner_data("sovchange_2025-02-16.dat")
+
     print("Rendering map...")
     sov_map.render(thread_count=16)
+
     print("Calculating labels...")
-    labels = sov_map.calculate_labels()
-    for label in labels:
-        print(f"{label.owner_id}: ({label.x}, {label.y}) with {label.count} pixels")
-    print("Saving map...")
+    sov_map.calculate_labels()
+    #labels = sov_map.get_owner_labels()
+    #for label in labels:
+    #    print(f"{label.owner_id}: ({label.x}, {label.y}) with {label.count} pixels")
+
+    print("Rendering overlay...")
     import PIL.Image
     sov_layer = sov_map.get_image().as_pil_image()
     sys_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 0))
     bg_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 255))
+    label_layer = PIL.Image.new("RGBA", bg_layer.size, (0, 0, 0, 0))
     sov_map.draw_systems(ImageDraw.Draw(sys_layer))
+    sov_map.draw_owner_labels(ImageDraw.Draw(label_layer), base_font=base_font)
+
     combined = PIL.Image.alpha_composite(sov_layer, sys_layer)
+    combined = PIL.Image.alpha_composite(combined, label_layer)
     combined = PIL.Image.alpha_composite(bg_layer, combined)
+
+    print("Saving map...")
     combined.save("influence.png")
     print("Done.")
 
