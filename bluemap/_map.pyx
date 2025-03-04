@@ -318,6 +318,7 @@ cdef class ColumnWorker:
 
 cdef class SolarSystem:
     cdef CSolarSystemData c_data
+    cdef str c_name
 
     def __init__(self, id_: int, constellation_id: int, region_id: int, x: int, y: int, has_station: bool,
                  sov_power: float, owner: int | None):
@@ -334,6 +335,7 @@ cdef class SolarSystem:
         self.c_data = CSolarSystemData(
             id=id_, constellation_id=constellation_id, region_id=region_id, x=x, y=y,
             has_station=has_station, sov_power=sov_power, owner=owner)
+        self.c_name = str(id_)
 
     @property
     def id(self):
@@ -367,9 +369,51 @@ cdef class SolarSystem:
     def owner(self):
         return self.c_data.owner
 
+    @property
+    def name(self):
+        return self.c_name
+
+    @name.setter
+    def name(self, value: str):
+        self.c_name = value
+
+cdef class Constellation:
+    cdef id_t id
+    cdef id_t region_id
+    name: str
+
+    def __init__(self, id_: int, region_id: int, name: str):
+        if type(id_) is not int or type(region_id) is not int:
+            raise TypeError("id and region_id must be ints")
+        self.id = id_
+        self.region_id = region_id
+        self.name = name
+
+    @property
+    def id(self):
+        return self.id
+
+    @property
+    def region_id(self):
+        return self.region_id
+
+cdef class Region:
+    cdef id_t id
+    name: str
+
+    def __init__(self, id_: int, name: str):
+        if type(id_) is not int:
+            raise TypeError("id must be an int")
+        self.id = id_
+        self.name = name
+
+    @property
+    def id(self):
+        return self.id
+
 cdef class Owner:
     cdef COwnerData c_data
-    name: str
+    cdef str c_name
 
     def __init__(self, id_: int, color: tuple[int, int, int] | tuple[int, int, int, int], npc: bool):
         if type(id_) is not int:
@@ -383,7 +427,7 @@ cdef class Owner:
                 red=color[0], green=color[1], blue=color[2],
                 alpha=color[3] if len(color) > 3 else 255
             ), npc=npc)
-        self.name = str(id_)
+        self.c_name = str(id_)
 
     @property
     def id(self):
@@ -391,11 +435,19 @@ cdef class Owner:
 
     @property
     def color(self):
-        return self.c_data.color
+        return self.c_data.color.red, self.c_data.color.green, self.c_data.color.blue, self.c_data.color.alpha
 
     @property
     def npc(self):
         return self.c_data.npc
+
+    @property
+    def name(self):
+        return self.c_name
+
+    @name.setter
+    def name(self, value: str):
+        self.c_name = value
 
 cdef class MapOwnerLabel:
     cdef CMap.CMapOwnerLabel c_data
@@ -556,6 +608,8 @@ cdef class SovMap:
     _owners: dict[int, Owner]
     _systems: dict[int, SolarSystem]
     _connections: list[tuple[int, int]]
+    constellations: dict[int, Constellation]
+    regions: dict[int, Region]
 
     cdef vector[CMap.CMapOwnerLabel] owner_labels
     cdef vector[Color] c_color_table
@@ -579,6 +633,8 @@ cdef class SovMap:
         self._owners = {}
         self._systems = {}
         self._connections = []
+        self.constellations = {}
+        self.regions = {}
 
     ### Internal Methods - handle with care! ###
 
@@ -702,7 +758,7 @@ cdef class SovMap:
                 color=owner['color'],
                 npc=owner['npc'])
             if "name" in owner:
-                owner_obj.name = owner["name"]
+                owner_obj.c_name = owner["name"]
             if owner_obj.c_data.color.blue > 0 and owner_obj.c_data.color.green == 0 and owner_obj.c_data.color.red == 0:
                 # noinspection PyUnresolvedReferences
                 self.c_color_table.push_back(owner.c_data.color)
@@ -740,10 +796,10 @@ cdef class SovMap:
                 owner=system['owner'])
             # noinspection PyTypeChecker
             self._systems[system_obj.id] = system_obj
-            #if system_obj.id == 30004550:
-            #    print(f"30004550: {system_obj.x}, {system_obj.y}")
             # noinspection PyUnresolvedReferences
             system_data.push_back(system_obj.c_data)
+            if "name" in system:
+                system_obj.name = system["name"]
 
         for connection in connections:
             if connection[0] in skipped or connection[1] in skipped:
@@ -1064,7 +1120,8 @@ cdef class SovMap:
                 continue
             owner = self._owners[label.owner_id]
             color = (owner.c_data.color.red, owner.c_data.color.green, owner.c_data.color.blue)
-            owner_name = owner.name
+            # noinspection PyTypeChecker
+            owner_name = owner.c_name  # type: str
             font_size = (<int>(sqrt(label.count) / 3.0)) + 8
             if font_size in fonts:
                 font = fonts[font_size]

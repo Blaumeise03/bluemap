@@ -6,6 +6,7 @@ from typing import Any
 import PIL
 from PIL import ImageDraw
 
+from bluemap.table import Table
 from . import SovMap, OwnerImage
 
 
@@ -77,7 +78,7 @@ def _create_tables(connection, legacy=False):
 
 def load_data_from_db(
         host, user, password, database, legacy=False
-) -> tuple[list[dict], list[dict], list[tuple[int, int]]]:
+) -> tuple[list[dict], list[dict], list[tuple[int, int]], list[dict], dict[int, str]]:
     import pymysql
     from pymysql import cursors
     c_station = "station" if not legacy else "stantion"
@@ -113,6 +114,7 @@ def load_data_from_db(
             cursor.execute(
                 f"SELECT "
                 f"  solarSystemID, "
+                f"  solarSystemName, "
                 f"  constellationID, "
                 f"  regionID, x, y, z,"
                 f"  {c_station} as `station`,"
@@ -123,6 +125,7 @@ def load_data_from_db(
             for row in cursor.fetchall():
                 systems.append({
                     'id': row['solarSystemID'],
+                    'name': row['solarSystemName'],
                     'constellation_id': row['constellationID'],
                     'region_id': row['regionID'],
                     'x': row['x'],
@@ -139,7 +142,35 @@ def load_data_from_db(
             for row in cursor.fetchall():
                 connections.append((row['fromSolarSystemID'], row['toSolarSystemID']))
 
-        return owners, systems, connections
+            # Load regions
+            cursor.execute("SELECT regionID, regionName FROM mapregions")
+            regions = {}
+            for row in cursor.fetchall():
+                regions[row['regionID']] = row['regionName']
+
+            # Load sov changes
+            cursor.execute(
+                f"""
+                SELECT fromAllianceID,
+                       toAllianceID,
+                       systemID,
+                       {c_power} as `sovPower`
+                FROM sovchangelog l
+                         LEFT JOIN mapsolarsystems s ON s.solarSystemID = l.systemID
+                         LEFT JOIN mapregions r ON r.regionID = s.regionID
+                ORDER BY r.z, r.x
+                """
+            )
+            sov_changes = []
+            for row in cursor.fetchall():
+                sov_changes.append({
+                    'from': row['fromAllianceID'],
+                    'to': row['toAllianceID'],
+                    'system': row['systemID'],
+                    'sov_power': row['sovPower']
+                })
+
+        return owners, systems, connections, sov_changes, regions
     finally:
         connection.close()
 
@@ -162,7 +193,7 @@ def main():
         print("Verdana font not found, using default font.")
 
     print("Loading data from database...")
-    owners, systems, connections = load_data_from_db(
+    owners, systems, connections, sov_changes, regions = load_data_from_db(
         args.host, args.user, args.password, args.database,
         legacy=args.legacy_db)
 
@@ -202,16 +233,79 @@ def main():
     sys_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 0))
     bg_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 255))
     label_layer = PIL.Image.new("RGBA", bg_layer.size, (0, 0, 0, 0))
+    legend_layer = PIL.Image.new("RGBA", bg_layer.size, (0, 0, 0, 0))
     sov_map.draw_systems(ImageDraw.Draw(sys_layer))
     sov_map.draw_owner_labels(ImageDraw.Draw(label_layer), base_font=base_font)
 
+    # Draw legend
+    draw = ImageDraw.Draw(legend_layer)
+    table = Table((64, 64, 64, 255), fixed_col_widths=[100, 100, 40, 80])
+    table.add_row(
+        ["Sov. Lost", "Sov. Gain", "System", "Region"],
+        [(200, 200, 200, 255)] * 4,
+        anchors=["ms", "ms", "ms", "ms"]
+    )
+    table.add_h_line()
+    for change in sov_changes:
+        from_owner = sov_map.owners[change['from']] if change['from'] else None
+        to_owner = sov_map.owners[change['to']] if change['to'] else None
+        system = sov_map.systems[change['system']]
+        table.add_row(
+            [
+                from_owner.name if from_owner else "",
+                to_owner.name if to_owner else "",
+                system.name,
+                regions[system.region_id]
+            ],
+            [
+                from_owner.color if from_owner else (0, 0, 0, 255),
+                to_owner.color if to_owner else (0, 0, 0, 255),
+                (200, 200, 255, 255), (200, 200, 200, 255)],
+            bg_color=(0, 0, 0x40, 255) if change['sov_power'] >= 6.0 else None
+        )
+    table.render(draw, (10, 50))
+
     combined = PIL.Image.alpha_composite(sov_layer, sys_layer)
     combined = PIL.Image.alpha_composite(combined, label_layer)
+    combined = PIL.Image.alpha_composite(combined, legend_layer)
     combined = PIL.Image.alpha_composite(bg_layer, combined)
 
     print("Saving map...")
     combined.save("influence.png")
     print("Done.")
+
+
+def test_table():
+    from .table import Table
+    from PIL import Image, ImageDraw
+
+    table = Table((0, 0, 0, 255))
+
+    table.add_row(
+        ["Sov. Lost", "Sov. Gain", "System", "Region"],
+        [(200, 200, 200, 255)] * 4,
+        anchors=["ms", "ms", "ms", "ms"]
+    )
+    table.add_h_line()
+    table.add_row(
+        ["[SHH]", "[SUS]", "J9-5MQ", "Branch"],
+        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
+    )
+    table.add_row(
+        ["[KRKD]", "[SUS]", "EU9-J3", "Detroid"],
+        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
+    )
+    table.add_row(
+        ["", "[NICE]", "GBT4-J", "Etherium Reach"],
+        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
+    )
+    table.add_row(
+        ["[MSOS]", "", "U-QMOA", "Scalding Pass"],
+        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
+    )
+    img = PIL.Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+    table.render(ImageDraw.Draw(img), (20, 20))
+    img.save("table.png")
 
 
 if __name__ == "__main__":
