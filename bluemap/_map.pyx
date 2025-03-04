@@ -74,7 +74,7 @@ cdef extern from "Map.h" namespace "bluemap":
 
         # The fancy shit
         # Takes a function (double, bool, id_t) -> double
-        void set_sov_power_function(object func)
+        void set_sov_power_function(object func) except +
 
         unsigned int get_width()
         unsigned int get_height()

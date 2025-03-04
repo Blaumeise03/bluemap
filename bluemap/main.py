@@ -15,14 +15,20 @@ def _mem_test():
     Test memory safety of the SovMap class.
     :return:
     """
+
+    class TestCallable:
+        def __call__(self, sov_power, _, __):
+            return 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+
     import psutil
     process = psutil.Process()
     start_memory = process.memory_info().rss / 1024 / 1024
     for i in range(5):
         sov_map = SovMap()
         sov_map.load_data_from_file("dump.dat")
-        for j in range(100):
-            sov_map.set_sov_power_function(lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0))
+        #for j in range(100):
+            #sov_map.set_sov_power_function(lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0))
+            #sov_map.set_sov_power_function(TestCallable())
         sov_map.render(thread_count=16)
         # sov_map.save("sov_map.png")
         memory = process.memory_info().rss / 1024 / 1024
@@ -314,38 +320,5 @@ def main():
     print("Done.")
 
 
-def test_table():
-    from .table import Table
-    from PIL import Image, ImageDraw
-
-    table = Table((0, 0, 0, 255))
-
-    table.add_row(
-        ["Sov. Lost", "Sov. Gain", "System", "Region"],
-        [(200, 200, 200, 255)] * 4,
-        anchors=["ms", "ms", "ms", "ms"]
-    )
-    table.add_h_line()
-    table.add_row(
-        ["[SHH]", "[SUS]", "J9-5MQ", "Branch"],
-        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
-    )
-    table.add_row(
-        ["[KRKD]", "[SUS]", "EU9-J3", "Detroid"],
-        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
-    )
-    table.add_row(
-        ["", "[NICE]", "GBT4-J", "Etherium Reach"],
-        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
-    )
-    table.add_row(
-        ["[MSOS]", "", "U-QMOA", "Scalding Pass"],
-        [(255, 0, 0, 255), (0, 255, 0, 255), (200, 200, 255, 255), (200, 200, 200, 255)]
-    )
-    img = PIL.Image.new("RGBA", (300, 100), (0, 0, 0, 0))
-    table.render(ImageDraw.Draw(img), (20, 20))
-    img.save("table.png")
-
-
 if __name__ == "__main__":
-    main()
+    _mem_test()

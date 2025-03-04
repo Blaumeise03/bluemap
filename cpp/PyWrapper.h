@@ -3,6 +3,7 @@
 
 #include <Python.h>
 #include <stdexcept>
+#include <iostream>
 
 class PyObjectWrapper {
 protected:
@@ -105,15 +106,28 @@ public:
             return {};
         }
     }
+
     [[nodiscard]] bool validate() const {
         if (!py_obj || !PyCallable_Check(py_obj)) {
             return false;
         }
 
-        PyObject *code = PyObject_GetAttrString(py_obj, "__code__");
-        if (!code) {
-            return false;
+        PyObject *callable = nullptr;
+        if (PyObject_HasAttrString(py_obj, "__call__")) {
+            callable = PyObject_GetAttrString(py_obj, "__call__");
+            if (!callable) return false;
         }
+
+
+        PyObject *code = nullptr;
+        if (PyObject_HasAttrString(py_obj, "__code__")) {
+            code = PyObject_GetAttrString(py_obj, "__code__");
+        } else {
+            if (!callable) return false;
+            code = PyObject_GetAttrString(callable, "__code__");
+        }
+        if (!code) return false;
+
 
         PyObject *arg_count = PyObject_GetAttrString(code, "co_argcount");
         Py_DECREF(code);
@@ -121,10 +135,16 @@ public:
             return false;
         }
 
-        const int expected_args = PyLong_AsLong(arg_count);
+        int arg_count_int = PyLong_AsLong(arg_count);
         Py_DECREF(arg_count);
 
-        return expected_args == sizeof...(Args);
+        if (callable) {
+            if (PyMethod_Check(callable)) {
+                arg_count_int -= 1; // Subtract one for the 'self' argument
+            }
+            Py_DECREF(callable);
+        }
+        return arg_count_int == sizeof...(Args);
     }
 };
 
