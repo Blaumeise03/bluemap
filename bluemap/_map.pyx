@@ -2,7 +2,7 @@
 import os
 import weakref
 from pathlib import Path
-from typing import Generator, TYPE_CHECKING, Union, Callable
+from typing import Generator, TYPE_CHECKING, Union, Callable, Iterable
 
 if TYPE_CHECKING:
     from PIL.ImageDraw import ImageDraw
@@ -398,18 +398,30 @@ cdef class Constellation:
         return self.region_id
 
 cdef class Region:
-    cdef id_t id
+    cdef id_t c_id
+    cdef int c_x
+    cdef int c_y
     name: str
 
-    def __init__(self, id_: int, name: str):
+    def __init__(self, id_: int):
         if type(id_) is not int:
             raise TypeError("id must be an int")
-        self.id = id_
-        self.name = name
+        self.c_id = id_
+        self.name = str(id_)
+        self.c_x = 0
+        self.c_y = 0
 
     @property
     def id(self):
-        return self.id
+        return self.c_id
+
+    @property
+    def x(self):
+        return self.c_x
+
+    @property
+    def y(self):
+        return self.c_y
 
 cdef class Owner:
     cdef COwnerData c_data
@@ -732,7 +744,13 @@ cdef class SovMap:
         # noinspection PyTypeChecker
         self.c_map.save(path.encode('utf-8'))
 
-    def load_data(self, owners: list, systems: list, connections: list):
+    def load_data(
+            self,
+            owners: Iterable[dict],
+            systems: Iterable[dict],
+            connections: Iterable[tuple[int, int]],
+            regions: Iterable[dict] | None = None,
+    ):
         """
         Load data into the map. Only systems inside the map will be saved, other systems will be ignored.
 
@@ -740,6 +758,7 @@ cdef class SovMap:
         :param owners: a list of owner data, each entry is a dict with the keys 'id' (int), 'color' (3-tuple) and 'npc' (bool). Optionally 'name' (str)
         :param systems: a list of system data, each entry is a dict with the keys 'id', 'x', 'z', 'constellation_id', 'region_id', 'has_station', 'sov_power' and 'owner'
         :param connections: a list of jump data, each entry is a tuple of two system IDs
+        :param regions: a list of region data (or None), each entry is a dict with the keys 'id', 'x', 'z' and optionally 'name' (str)
         :return:
         """
         cdef vector[COwnerData] owner_data
@@ -748,6 +767,7 @@ cdef class SovMap:
         self._connections.clear()
         self._systems.clear()
         self._owners.clear()
+        self.regions.clear()
         # noinspection PyUnresolvedReferences
         self.c_color_table.clear()
 
@@ -800,6 +820,20 @@ cdef class SovMap:
             system_data.push_back(system_obj.c_data)
             if "name" in system:
                 system_obj.name = system["name"]
+        if regions:
+            for region in regions:
+                if region['x'] is None or region['z'] is None:
+                    continue
+                x = region['x']
+                z = region['z']
+                x = ((x / scale) + width / 2 + offset_x) + 0.5
+                z = ((z / scale) + height / 2 + offset_y) + 0.5
+                region_obj = Region(id_=region['id'])
+                region_obj.c_x = int(x)
+                region_obj.c_y = int(z)
+                if "name" in region:
+                    region_obj.name = region["name"]
+                self.regions[region_obj.id] = region_obj
 
         for connection in connections:
             if connection[0] in skipped or connection[1] in skipped:
@@ -1137,6 +1171,24 @@ cdef class SovMap:
             draw.text((x, y + 1), owner_name, font=font, fill=black, anchor="mm")
             # Draw text
             draw.text((x, y), owner_name, font=font, fill=color, anchor="mm")
+
+    def draw_region_labels(
+            self,
+            draw: "ImageDraw",
+            font: Union["ImageFont", "FreeTypeFont", None] = None,
+            fill: tuple[int, int, int] | tuple[int, int, int, int] = (0xff, 0xff, 0xff, 0xB0)
+    ) -> None:
+        from PIL import ImageFont
+
+        if font is None:
+            font = ImageFont.load_default()
+
+        cdef Region region
+        cdef int x, y
+        for region in self.regions.values():
+            x = region.x
+            y = region.y
+            draw.text((x, y), region.name, font=font, fill=fill, anchor="mm")
 
     cdef Color cnext_color(self):
         cdef int max_ = 0, min_ = 0, cr = 0, cg = 0, cb = 0
