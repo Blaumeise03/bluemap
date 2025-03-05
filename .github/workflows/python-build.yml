@@ -24,6 +24,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: gcc
+          vcvarsall: false
+          cmake: false
+          ninja: false
+          vcpkg: false
+
       - name: Build release distributions
         run: |
           # NOTE: put your own distribution build steps here.
