@@ -36,16 +36,17 @@ to write your own wrapper around it, which loads the data from some source.
 
 
 # Installation
-The precompiled package can be installed via pip. There are two variations. In general, this package does not depend on
-any other packages. However, the CLI requires Pillow and pymysql. If you want to use the CLI, you can install the 
-package with the following command:
+The precompiled package can be installed via pip. There are multiple variations that can be installed via pip:
+
+| Name               | Map | Tables | MySQL DB |
+|--------------------|-----|--------|----------|
+| `bluemap[minimal]` | ✅   | ❌      | ❌        |
+| `bluemap`          | ✅   | ✅      | ❌        |
+| `bluemap[CLI]`     | ✅   | ✅      | ✅        |
+
+e.g. to install the full version, you can use the following command:
 ```sh
 pip install bluemap[CLI]
-```
-
-If you want to use the library only, you can install it with the following command:
-```sh
-pip install bluemap
 ```
 
 # Usage (CLI)
