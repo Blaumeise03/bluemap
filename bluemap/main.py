@@ -3,8 +3,6 @@ from datetime import datetime
 
 from typing import Any
 
-import PIL
-from PIL import ImageDraw
 
 from bluemap.table import Table
 from . import SovMap, OwnerImage
@@ -26,9 +24,9 @@ def _mem_test():
     for i in range(5):
         sov_map = SovMap()
         sov_map.load_data_from_file("dump.dat")
-        #for j in range(100):
-            #sov_map.set_sov_power_function(lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0))
-            #sov_map.set_sov_power_function(TestCallable())
+        # for j in range(100):
+        # sov_map.set_sov_power_function(lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0))
+        # sov_map.set_sov_power_function(TestCallable())
         sov_map.render(thread_count=16)
         # sov_map.save("sov_map.png")
         memory = process.memory_info().rss / 1024 / 1024
@@ -43,13 +41,10 @@ def _mem_test():
         start_memory = memory
 
 
-def _create_tables(connection, legacy=False):
+def _create_tables(connection):
     from pymysql import cursors
-    col_station = "station" if not legacy else "stantion"
-    col_power = "sovPower" if not legacy else "ADM"
     with connection.cursor() as cursor:  # type: cursors.Cursor
         cursor.execute(
-            # MariaDB
             f"""
             CREATE TABLE IF NOT EXISTS evealliances
             (
@@ -63,13 +58,14 @@ def _create_tables(connection, legacy=False):
             CREATE TABLE IF NOT EXISTS mapsolarsystems
             (
                 solarSystemID   INT PRIMARY KEY,
+                solarSystemName VARCHAR(255),
                 constellationID INT,
                 regionID        INT,
                 x               FLOAT,
                 y               FLOAT,
                 z               FLOAT,
-                {col_station}   BOOLEAN,
-                {col_power}     FLOAT,
+                station         BOOLEAN,
+                sovPower        FLOAT,
                 allianceID      INT
             )
             """)
@@ -82,15 +78,34 @@ def _create_tables(connection, legacy=False):
                 PRIMARY KEY (fromSolarSystemID, toSolarSystemID)
             )
             """)
+        cursor.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS mapregions
+            (
+                regionID   INT PRIMARY KEY,
+                regionName VARCHAR(255),
+                x          FLOAT,
+                y          FLOAT,
+                z          FLOAT
+            )
+            """)
+        cursor.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS sovchangelog
+            (
+                fromAllianceID INT,
+                toAllianceID   INT,
+                systemID       INT,
+                sovPower       FLOAT
+            )
+            """)
 
 
 def load_data_from_db(
-        host, user, password, database, legacy=False
+        host, user, password, database
 ) -> tuple[list[dict], list[dict], list[tuple[int, int]], list[dict], dict[int, dict]]:
     import pymysql
     from pymysql import cursors
-    c_station = "station" if not legacy else "stantion"
-    c_power = "sovPower" if not legacy else "ADM"
     # Database connection parameters
     connection = pymysql.connect(
         host=host,
@@ -125,8 +140,8 @@ def load_data_from_db(
                 f"  solarSystemName, "
                 f"  constellationID, "
                 f"  regionID, x, y, z,"
-                f"  {c_station} as `station`,"
-                f"  {c_power} as `sovPower`,"
+                f"  station,"
+                f"  sovPower,"
                 f"  allianceID "
                 f"FROM mapsolarsystems")
             systems = []
@@ -167,7 +182,7 @@ def load_data_from_db(
                 SELECT fromAllianceID,
                        toAllianceID,
                        systemID,
-                       {c_power} as `sovPower`
+                       sovPower
                 FROM sovchangelog l
                          LEFT JOIN mapsolarsystems s ON s.solarSystemID = l.systemID
                          LEFT JOIN mapregions r ON r.regionID = s.regionID
@@ -189,15 +204,27 @@ def load_data_from_db(
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Load data from MariaDB and render SovMap.')
+    parser = argparse.ArgumentParser(description='Load data from MariaDB and render the influence map.')
     parser.add_argument('--host', required=True, help='Database host')
     parser.add_argument('--user', required=True, help='Database user')
     parser.add_argument('--password', required=True, help='Database password')
     parser.add_argument('--database', required=True, help='Database name')
-    parser.add_argument("--legacy_db", action="store_true", help="Use legacy database schema")
+    parser.add_argument('--text', action='append', nargs='*',
+                        help='Text to render in the top left corner. Use --text header "content" for a bold line, '
+                             'or --text "content" for a normal line. For empty lines, use --text "" or without any '
+                             'extra arg.')
+    parser.add_argument('--output', '-o', default='influence.png', help='Output file name for the image')
+    parser.add_argument('--map_out', '-mo', required=False,
+                        help='Output file name for the map. This output should be provided as input for the next render'
+                             ' to render changed areas.')
+    parser.add_argument('--map_in', '-mi', required=False,
+                        help='Input file name for the old sov map. This should be the output of the last render. It '
+                             'will be used to render areas where the influence has changed with stripes. If not '
+                             'provided, the map will be rendered without stripes.')
     args = parser.parse_args()
 
-    from PIL import ImageFont
+    import PIL
+    from PIL import Image, ImageDraw, ImageFont
 
     try:
         base_font_b = ImageFont.truetype(r"C:\Windows\Fonts\VerdanaB.ttf")
@@ -216,14 +243,15 @@ def main():
 
     print("Loading data from database...")
     owners, systems, connections, sov_changes, regions = load_data_from_db(
-        args.host, args.user, args.password, args.database,
-        legacy=args.legacy_db)
+        args.host, args.user, args.password, args.database)
 
     print("Preparing map...")
     sov_map = SovMap()
     sov_map.update_size()
     sov_map.load_data(owners, systems, connections, regions=regions.values())
-    sov_map.load_old_owner_data("sovchange_2025-02-16.dat")
+    if args.map_in:
+        sov_map.load_old_owner_data(args.map_in)
+    #sov_map.load_old_owner_data("sovchange_2025-02-16.dat")
 
     start = datetime.now()
     sov_map.set_sov_power_function(
@@ -238,6 +266,8 @@ def main():
     sov_map.render(thread_count=16)
     diff = datetime.now() - start
     print(f"Rendering took {diff.total_seconds():.4f} seconds.")
+    if args.map_out:
+        sov_map.save_owner_data(args.map_out, compress=True)
 
     print("Calculating labels...")
     start = datetime.now()
@@ -246,7 +276,6 @@ def main():
     print(f"Label calculation took {diff.total_seconds():.4f} seconds.")
 
     print("Rendering overlay...")
-    import PIL.Image
     sov_layer = sov_map.get_image().as_pil_image()
     sys_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 0))
     bg_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 255))
@@ -260,27 +289,38 @@ def main():
     # Draw legend
     draw = ImageDraw.Draw(legend_layer)
 
-    draw.text(
-        xy=(4, 17),
-        text="EVE Echoes Null-Sec Player Influence Map",
-        font=font_arialb.font_variant(size=16),
-        fill=(64, 64, 64),
-    )
-    y = 35
-    lines = [
-        "Generated by <NAME>",
-        "Using github.com/Blaumeise03/bluemap",
-        "Powered by <URL>",
-        "Using sovereignty data for <DATE>",
-    ]
+    font_header = font_arialb.font_variant(size=16)
+    font_normal = font_arial.font_variant(size=16)
+
+    if not args.text:
+        lines = [
+            (font_header, "EVE Echoes Null-Sec Player Influence Map"),
+            (font_normal, "Generated by <NAME>"),
+            (font_normal, "Using github.com/Blaumeise03/bluemap"),
+            (font_normal, "Powered by <URL>"),
+            (font_normal, "Using sovereignty data for <DATE>"),
+        ]
+    else:
+        lines = []
+        for line in args.text:
+            if not line:
+                lines.append(None)
+            elif len(line) == 1:
+                lines.append((font_normal, line[0]))
+            else:
+                lines.append((font_header, line[1]))
+
+    y = 17
     for line in lines:
-        draw.text(
-            xy=(4, y),
-            text=line,
-            font=font_arial.font_variant(size=16),
-            fill=(64, 64, 64),
-        )
+        if line is not None:
+            draw.text(
+                xy=(4, y),
+                text=line[1],
+                font=line[0],
+                fill=(64, 64, 64),
+            )
         y += 18
+
     y += 18
 
     table = Table((64, 64, 64, 255), fixed_col_widths=[100, 100, 50, 80])
@@ -321,4 +361,4 @@ def main():
 
 
 if __name__ == "__main__":
-    _mem_test()
+    main()
