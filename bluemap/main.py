@@ -230,6 +230,7 @@ def main():
         owners, systems, connections, sov_changes, regions,
         path_map_in=args.map_in,
         path_map_out=args.map_out,
+        img_out=args.output,
         text=args.text
     )
 
@@ -242,6 +243,7 @@ def render(
         regions: dict[int, dict],
         path_map_in: str | None = None,
         path_map_out: str | None = None,
+        img_out: str = "influence.png",
         text: list[str] | None = None,
 ):
     """
@@ -256,6 +258,7 @@ def render(
     :param regions:      a dict of regions, every region is a dict with the keys `id`, `name`, `x`, `y`, `z`.
     :param path_map_in:  the path to the old map data, if available.
     :param path_map_out: the output path for the new map data.
+    :param img_out:      the output path for the image.
     :param text:         the text to render in the top left corner. See the help str of the main function for details.
     :return:
     """
@@ -395,7 +398,7 @@ def render(
     combined = PIL.Image.alpha_composite(bg_layer, combined)
 
     print("Saving map...")
-    combined.save("influence.png")
+    combined.save(img_out)
     print("Done.")
 
 
