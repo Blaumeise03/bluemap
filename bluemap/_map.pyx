@@ -378,24 +378,24 @@ cdef class SolarSystem:
         self.c_name = value
 
 cdef class Constellation:
-    cdef id_t id
-    cdef id_t region_id
+    cdef id_t c_id
+    cdef id_t c_region_id
     name: str
 
     def __init__(self, id_: int, region_id: int, name: str):
         if type(id_) is not int or type(region_id) is not int:
             raise TypeError("id and region_id must be ints")
-        self.id = id_
-        self.region_id = region_id
+        self.c_id = id_
+        self.c_region_id = region_id
         self.name = name
 
     @property
     def id(self):
-        return self.id
+        return self.c_id
 
     @property
     def region_id(self):
-        return self.region_id
+        return self.c_region_id
 
 cdef class Region:
     cdef id_t c_id
@@ -750,6 +750,7 @@ cdef class SovMap:
             systems: Iterable[dict],
             connections: Iterable[tuple[int, int]],
             regions: Iterable[dict] | None = None,
+            filter_outside: bool = True
     ):
         """
         Load data into the map. Only systems inside the map will be saved, other systems will be ignored.
@@ -759,6 +760,7 @@ cdef class SovMap:
         :param systems: a list of system data, each entry is a dict with the keys 'id', 'x', 'z', 'constellation_id', 'region_id', 'has_station', 'sov_power' and 'owner'
         :param connections: a list of jump data, each entry is a tuple of two system IDs
         :param regions: a list of region data (or None), each entry is a dict with the keys 'id', 'x', 'z' and optionally 'name' (str)
+        :param filter_outside: if True, systems outside the map will be skipped
         :return:
         """
         cdef vector[COwnerData] owner_data
@@ -795,6 +797,7 @@ cdef class SovMap:
         height = self._height
         cdef object skipped = set()
         cdef SolarSystem system_obj
+        cdef int c_filter = 1 if filter_outside else 0
         for system in systems:
             if system['x'] is None or system['z'] is None:
                 skipped.add(system['id'])
@@ -803,9 +806,10 @@ cdef class SovMap:
             z = system['z']
             x = ((x / scale) + width / 2 + offset_x) + 0.5
             z = ((z / scale) + height / 2 + offset_y) + 0.5
-            if x < 0 or x >= width or z < 0 or z >= height:
-                skipped.add(system['id'])
-                continue
+            if c_filter:
+                if x < 0 or x >= width or z < 0 or z >= height:
+                    skipped.add(system['id'])
+                    continue
             system_obj = SolarSystem(
                 id_=system['id'],
                 constellation_id=system['constellation_id'],
@@ -1085,8 +1089,6 @@ cdef class SovMap:
         if sample_rate is not None:
             self._sample_rate = sample_rate
         self._scale = 4.8445284569785E17 / ((self.height - 20) / 2.0)
-        # 4.7776414763101575E14
-        print(f"New scale: {self._scale}, width: {self.width}, height: {self.height}")
         self._sync_data()
 
     # noinspection PyTypeChecker
@@ -1213,7 +1215,7 @@ cdef class SovMap:
                         cr = r
                         cg = g
                         cb = b
-        c = Color(red=cr, green=cg, blue=cb)
+        c = Color(red=cr, green=cg, blue=cb, alpha=255)
         # noinspection PyUnresolvedReferences
         self.c_color_table.push_back(c)
         return c
