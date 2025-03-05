@@ -1,21 +1,31 @@
-# This workflow will upload a Python Package to PyPI when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+name: Build and Upload Python Package
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload to TestPyPI'
+        required: true
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - published
 
-name: Build Python Package
-
-on: [workflow_dispatch]
 
 permissions:
   contents: read
 
 jobs:
-  release-build:
-    runs-on: ubuntu-latest
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]  # , macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +34,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Setup Cpp
+      - name: Setup Cpp on Linux and macOS
+        if: runner.os != 'Windows'
         uses: aminya/setup-cpp@v1
         with:
           compiler: gcc
@@ -33,14 +44,78 @@ jobs:
           ninja: false
           vcpkg: false
 
-      - name: Build release distributions
-        run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
-          python -m build
-
-      - name: Upload distributions
-        uses: actions/upload-artifact@v4
+      - name: Setup Cpp on Windows
+        if: runner.os == 'Windows'
+        uses: aminya/setup-cpp@v1
         with:
-          name: release-dists
-          path: dist/
+          compiler: msvc
+          vcvarsall: true
+          architecture: x64
+          cmake: false
+          ninja: false
+          vcpkg: false
+
+      - name: Install build tools
+        run: python -m pip install cibuildwheel==2.23.0 build
+
+      - name: Build wheels
+        env:
+          CIBW_SKIP: "*-win32"
+        uses: pypa/cibuildwheel@v2.23.0
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install build
+
+      - name: Build sdist
+        run: python -m build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-dist
+          path: dist/*.tar.gz
+
+  upload_pypi:
+    needs: [ build_wheels, build_sdist ]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.upload == 'true' || (github.event_name == 'release' && github.event.action == 'published') }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'cibw-*'
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'cibw-*'
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: source-dist
+          path: dist
+
+      - name: Upload to TestPyPI
+        env:
+          TWINE_USERNAME: ${{ secrets.TESTPYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.TESTPYPI_PASSWORD }}
+        run: |
+          python -m pip install twine
+          python -m twine upload --repository testpypi dist/*.tar.gz dist/*.whl --skip-existing

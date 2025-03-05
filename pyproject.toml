@@ -18,7 +18,6 @@ classifiers = [
     "Programming Language :: Cython",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: Implementation :: Cython",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 
@@ -45,3 +44,7 @@ ext-modules = [
 
 [project.scripts]
 bluemap = "bluemap.main:main"
+
+[tool.cibuildwheel]
+# Increase pip debugging output
+# build-verbosity = 1

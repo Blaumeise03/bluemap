@@ -9,6 +9,7 @@
 /bluemap/**/*.c
 /bluemap/**/*.html
 build/
+wheelhouse/
 dist/
 __pycache__/
 *.egg-info/
