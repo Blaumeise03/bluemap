@@ -119,4 +119,4 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.TESTPYPI_PASSWORD }}
         run: |
           python -m pip install twine
-          python -m twine upload --repository testpypi dist/*.tar.gz dist/*.whl --skip-existing
+          python -m twine upload dist/*.tar.gz dist/*.whl --skip-existing
