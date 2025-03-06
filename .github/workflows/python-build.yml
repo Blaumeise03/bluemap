@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       upload:
-        description: 'Upload to TestPyPI'
+        description: 'Upload to PyPI'
         required: true
         type: boolean
         default: false
@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]  # , macos-latest
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +61,8 @@ jobs:
       - name: Build wheels
         env:
           CIBW_SKIP: "*-win32"
+          MACOSX_DEPLOYMENT_TARGET: 14
         uses: pypa/cibuildwheel@v2.23.0
-        continue-on-error: true
 
       - uses: actions/upload-artifact@v4
         with:
@@ -91,6 +91,7 @@ jobs:
           path: dist/*.tar.gz
 
   upload_pypi:
+    name: Deploy
     needs: [ build_wheels, build_sdist ]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.upload == 'true' || (github.event_name == 'release' && github.event.action == 'published') }}

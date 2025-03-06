@@ -20,6 +20,13 @@ are slightly different. But overall, the map should look very similar to the ori
 * [Credits](#credits)
 <!-- TOC -->
 
+> This project is still work in progress. The API might change until the version 1.0.0 is released. If you decide to
+> already use it, please make sure to pin the version in your requirements.txt file. Until version 1.0.0 is released,
+> minor versions might contain breaking changes. I will try to keep the changes as minimal as possible, but I cannot
+> guarantee that there will be no breaking changes.
+
+> If you find a bug or have a feature request, please open an issue on GitHub.
+
 # Overview
 As stated before, this project is implemented in C++ and Cython. The C++ part is responsible
 for the rendering of the influence layer, and the calculation of the owner label positions.
@@ -29,25 +36,34 @@ The C++ library does work in general standalone, but except for a testing tool t
 a specific file format as input, there is no real way to use it directly. So you would have
 to write your own wrapper around it, which loads the data from some source.
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6dacedb7-cf51-473a-8273-8926a48a6f27" height="400" alt="Example section of influence map and legend" />
-  <img src="https://github.com/user-attachments/assets/cb9b664f-d353-4484-b16d-b900c9c6ff82" height="400" alt="Example for changed influence area" />
-</p>
+![Example Map](https://github.com/user-attachments/assets/76c4d56f-23e2-44c6-90d6-0af466e7c855)
 
 
 # Installation
+PyPi has precompiled wheels for Windows (64bit), Linux and macOS (min version 14.0, untested). 32bit Windows is 
+supported but not automated. PyPi may or may not have a precompiled wheel for 32bit Windows.
+
+We support Python 3.12 and higher (atm 3.12 and 3.13 on PyPi)
+
 The precompiled package can be installed via pip. There are multiple variations that can be installed via pip:
 
 | Name               | Map | Tables | MySQL DB |
 |--------------------|-----|--------|----------|
 | `bluemap[minimal]` | ✅   | ❌      | ❌        |
-| `bluemap`          | ✅   | ✅      | ❌        |
+| `bluemap[table]`   | ✅   | ✅      | ❌        |
 | `bluemap[CLI]`     | ✅   | ✅      | ✅        |
 
 e.g. to install the full version, you can use the following command:
 ```sh
 pip install bluemap[CLI]
 ```
+
+- Map: The module for rendering the influence map
+- Tables: The module for rendering tables (depends on Pillow)
+- MySQL DB: The module for loading data from a MySQL database (depends on pymysql)
+
+Also note all functionality is available in the `bluemap` package. The extras are only for the convenience of the
+installation. You can also install the base version and add the dependencies manually.
 
 # Usage (CLI)
 The CLI supports rendering of maps with data from a mysql database. The program will create all required tables
@@ -98,6 +114,9 @@ python -m bluemap.main \
 # Usage (Library)
 The library is very simple to use. You can find an example inside the [main.py](bluemap/main.py) file. The main class
 is the `SovMap` class. This does all the heavy lifting. The `load_data` method is used to load the data into the map.
+
+Please note that the API is subject to change until version 1.0.0 is released. I recommend pinning the version in your
+requirements.txt file and manually update it.
 
 ```python
 from bluemap import SovMap
@@ -186,5 +205,4 @@ nice way to load the data. Refer to `Map::load_data` inside the [Map.cpp](cpp/Ma
 # Credits
 The original algorithm was created by Paladin Vent and continued by Verite Rendition. Verite's version can be found at
 [https://www.verite.space/](https://www.verite.space/). I do not know if Paladin Vent has a website (feel free to
-contact me to add it here). The original algorithm was written in Java. I wrote the C++ version from scratch.
-
+contact me to add it here). The original algorithm was written in Java and can be found on Verite's website.
