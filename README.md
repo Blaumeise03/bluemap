@@ -1,5 +1,10 @@
 bluemap - Influence map generator
 =================================
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Blaumeise03/bluemap/python-build.yml)
+![PyPI - Version](https://img.shields.io/pypi/v/bluemap)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/bluemap)
+![GitHub last commit](https://img.shields.io/github/last-commit/Blaumeise03/bluemap)
+
 Bluemap is an influence map generator for games like Eve Online/Echoes. It is
 based on the algorithm from Paladin Vent (which was continued by Verite Rendition),
 but was written from scratch in C++ and Cython. It is designed to be faster and easier
