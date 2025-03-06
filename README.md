@@ -20,6 +20,13 @@ are slightly different. But overall, the map should look very similar to the ori
 * [Credits](#credits)
 <!-- TOC -->
 
+> This project is still work in progress. The API might change until the version 1.0.0 is released. If you decide to
+> already use it, please make sure to pin the version in your requirements.txt file. Until version 1.0.0 is released,
+> minor versions might contain breaking changes. I will try to keep the changes as minimal as possible, but I cannot
+> guarantee that there will be no breaking changes.
+
+> If you find a bug or have a feature request, please open an issue on GitHub.
+
 # Overview
 As stated before, this project is implemented in C++ and Cython. The C++ part is responsible
 for the rendering of the influence layer, and the calculation of the owner label positions.
@@ -29,10 +36,7 @@ The C++ library does work in general standalone, but except for a testing tool t
 a specific file format as input, there is no real way to use it directly. So you would have
 to write your own wrapper around it, which loads the data from some source.
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/6dacedb7-cf51-473a-8273-8926a48a6f27" height="400" alt="Example section of influence map and legend" />
-  <img src="https://github.com/user-attachments/assets/cb9b664f-d353-4484-b16d-b900c9c6ff82" height="400" alt="Example for changed influence area" />
-</p>
+![Example Map](https://github.com/user-attachments/assets/76c4d56f-23e2-44c6-90d6-0af466e7c855)
 
 
 # Installation
@@ -48,6 +52,10 @@ e.g. to install the full version, you can use the following command:
 ```sh
 pip install bluemap[CLI]
 ```
+
+- Map: The module for rendering the influence map
+- Tables: The module for rendering tables (depends on Pillow)
+- MySQL DB: The module for loading data from a MySQL database (depends on pymysql)
 
 # Usage (CLI)
 The CLI supports rendering of maps with data from a mysql database. The program will create all required tables
@@ -187,4 +195,3 @@ nice way to load the data. Refer to `Map::load_data` inside the [Map.cpp](cpp/Ma
 The original algorithm was created by Paladin Vent and continued by Verite Rendition. Verite's version can be found at
 [https://www.verite.space/](https://www.verite.space/). I do not know if Paladin Vent has a website (feel free to
 contact me to add it here). The original algorithm was written in Java. I wrote the C++ version from scratch.
-
