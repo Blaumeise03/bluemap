@@ -1,4 +1,5 @@
 import argparse
+import math
 from datetime import datetime
 
 from typing import Any
@@ -290,15 +291,28 @@ def render(
 
     print("Preparing map...")
     sov_map = SovMap()
-    sov_map.update_size()
+    #sov_map.update_size(width=4096, height=4096)
     sov_map.load_data(owners, systems, connections, regions=regions.values())
-    if path_map_in:
-        sov_map.load_old_owner_data(path_map_in)
+    #if path_map_in:
+    #    sov_map.load_old_owner_data(path_map_in)
 
     start = datetime.now()
-    sov_map.set_sov_power_function(
-        lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
-    )
+    # noinspection PyUnreachableCode
+    if False:
+        # This is not required - as these are the default functions that are implemented in C++
+        # However, you can use this to change the functions.
+        sov_map.set_sov_power_function(
+            lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+        )
+        sov_map.set_influence_to_alpha_function(
+            lambda influence: float(min(
+                190,
+                int(math.log(math.log(influence + 1.0) + 1.0) * 700)
+            ))
+        )
+        sov_map.set_power_falloff_function(
+            lambda value, _, __: value * 0.3
+        )
     sov_map.calculate_influence()
     diff = datetime.now() - start
     print(f"Influence Calculation took {diff.total_seconds():.4f} seconds.")

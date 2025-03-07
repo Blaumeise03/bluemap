@@ -113,6 +113,7 @@ namespace bluemap {
         SolarSystem *solar_system,
         Owner *owner,
         const double value,
+        const double base_value,
         const int distance,
         std::vector<id_t> &set
     ) {
@@ -129,7 +130,7 @@ namespace bluemap {
         if (!found) {
             sov_solar_systems.push_back(solar_system);
         }
-        if (distance >= 4) return;
+        if (power_max_distance >= 0 && distance >= power_max_distance) return;
         if (connections.find(solar_system->get_id()) == connections.end()) return;
         for (const auto &neighbor: connections[solar_system->get_id()]) {
             if (std::find(set.begin(), set.end(), neighbor->get_id()) != set.end()) {
@@ -137,7 +138,9 @@ namespace bluemap {
             }
             assert(neighbor != nullptr);
             set.push_back(neighbor->get_id());
-            add_influence(neighbor, owner, value * power_falloff, distance + 1, set);
+            const double power_falloff = power_falloff_function(value, base_value, distance);
+            if (power_falloff <= 0.0) continue;
+            add_influence(neighbor, owner, power_falloff, base_value, distance + 1, set);
         }
     }
 
@@ -203,11 +206,10 @@ namespace bluemap {
                 const bool draw_border = border[i] || owner_changed ||
                                          i > 0 && prev_row[i - 1] != prev_row[i] ||
                                          i < width - 1 && prev_row[i + 1] != prev_row[i];
-                const int alpha = std::min(
-                    190, static_cast<int>(std::log(std::log(prev_influence[i] + 1.0) + 1.0) * 700));
+                const int alpha = static_cast<int>(map->influence_to_alpha(prev_influence[i]));
 
                 const auto color = prev_owner->get_color().with_alpha(
-                    draw_border ? std::max(0x48, alpha) : alpha
+                    draw_border ? std::max(map->border_alpha, alpha) : alpha
                 );
                 cache.set_pixel(i, y - row_offset, color);
 
@@ -314,7 +316,7 @@ namespace bluemap {
     Map::Map() {
         this->owner_image = std::make_unique<Owner *[]>(width * height);
 
-        sov_power_function = [](double sov_power, bool, id_t) {
+        sov_power_function = [](const double sov_power, bool, id_t) {
             double influence = 10.0;
             if (sov_power >= 6.0) {
                 influence *= 6;
@@ -322,6 +324,16 @@ namespace bluemap {
                 influence *= sov_power / 2.0;
             }
             return influence;
+        };
+
+        power_falloff_function = [](const double value, double, int) {
+            return value * 0.3;
+        };
+
+        influence_to_alpha = [](const double influence) {
+            return std::min(
+                190,
+                static_cast<int>(std::log(std::log(influence + 1.0) + 1.0) * 700));
         };
     }
 
@@ -431,6 +443,16 @@ namespace bluemap {
         this->sov_power_function = std::move(sov_power_function);
     }
 
+    void Map::set_power_falloff_function(std::function<double(double, double, int)> power_falloff_function) {
+        std::unique_lock lock(map_mutex);
+        this->power_falloff_function = std::move(power_falloff_function);
+    }
+
+    void Map::set_influence_to_alpha_function(std::function<double(double)> influence_to_alpha) {
+        std::unique_lock lock(map_mutex);
+        this->influence_to_alpha = std::move(influence_to_alpha);
+    }
+
     void Map::calculate_influence() {
         std::unique_lock lock(map_mutex);
         if (sov_solar_systems.empty()) {
@@ -443,7 +465,7 @@ namespace bluemap {
         LOG("Calculating influence for " << sov_solar_systems.size() << " solar systems")
         auto sov_orig = sov_solar_systems;
 
-        for (const auto &solar_system : sov_orig) {
+        for (const auto &solar_system: sov_orig) {
             const id_t owner_id = solar_system->get_owner() == nullptr ? 0 : solar_system->get_owner()->get_id();
             const double influence = sov_power_function(
                 solar_system->get_sov_power(),
@@ -451,7 +473,7 @@ namespace bluemap {
                 owner_id);
             const int level = (solar_system->get_sov_power() >= 6.0) ? 1 : 2;
             std::vector<id_t> set;
-            add_influence(solar_system, solar_system->get_owner(), influence, level, set);
+            add_influence(solar_system, solar_system->get_owner(), influence, influence, level, set);
         }
     }
 
@@ -642,15 +664,41 @@ namespace bluemap {
         return old_owners_image != nullptr;
     }
 #if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
-    void Map::set_sov_power_function(PyObject *closure) {
+    void Map::set_sov_power_function(PyObject *pyfunc) {
         std::unique_lock lock(map_mutex);
-        sov_power_closure = std::make_unique<PyClosure<double, double, bool, id_t>>(closure);
-        if (!sov_power_closure->validate()) {
-            sov_power_closure = nullptr;
-            throw std::runtime_error("Invalid closure, expected a function with signature (double, bool, int) -> double");
+        sov_power_pyfunc = std::make_unique<py::Callable<double, double, bool, id_t> >(pyfunc);
+        if (!sov_power_pyfunc->validate()) {
+            sov_power_pyfunc = nullptr;
+            throw std::runtime_error(
+                "Invalid callable, expected a function with signature (double, bool, int) -> double");
         }
-        sov_power_function = [this](double sov_power, bool has_station, id_t owner_id) {
-            return (*sov_power_closure)(sov_power, has_station, owner_id);
+        sov_power_function = [this](const double sov_power, const bool has_station, const id_t owner_id) {
+            return (*sov_power_pyfunc)(sov_power, has_station, owner_id);
+        };
+    }
+
+    void Map::set_power_falloff_function(PyObject *pyfunc) {
+        std::unique_lock lock(map_mutex);
+        power_falloff_pyfunc = std::make_unique<py::Callable<double, double, double, int> >(pyfunc);
+        if (!power_falloff_pyfunc->validate()) {
+            power_falloff_pyfunc = nullptr;
+            throw std::runtime_error(
+                "Invalid callable, expected a function with signature (double, double, int) -> double");
+        }
+        power_falloff_function = [this](const double value, const double base_value, const int distance) {
+            return (*power_falloff_pyfunc)(value, base_value, distance);
+        };
+    }
+
+    void Map::set_influence_to_alpha_function(PyObject *pyfunc) {
+        std::unique_lock lock(map_mutex);
+        influence_to_alpha_pyfunc = std::make_unique<py::Callable<double, double> >(pyfunc);
+        if (!influence_to_alpha_pyfunc->validate()) {
+            influence_to_alpha_pyfunc = nullptr;
+            throw std::runtime_error("Invalid callable, expected a function with signature (double) -> double");
+        }
+        influence_to_alpha = [this](const double influence) {
+            return (*influence_to_alpha_pyfunc)(influence);
         };
     }
 #endif

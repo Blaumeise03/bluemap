@@ -72,9 +72,11 @@ cdef extern from "Map.h" namespace "bluemap":
         # Will raise exception if size does not match (ptr will still be deallocated)
         void set_old_owner_image(id_t *old_owner_image, unsigned int width, unsigned int height) except +
 
-        # The fancy shit
+        ### The fancy shit ###
         # Takes a function (double, bool, id_t) -> double
-        void set_sov_power_function(object func) except +
+        void set_sov_power_function(object pyfunc) except +
+        void set_power_falloff_function(object pyfunc) except +
+        void set_influence_to_alpha_function(object pyfunc) except +
 
         unsigned int get_width()
         unsigned int get_height()
@@ -690,7 +692,7 @@ cdef class SovMap:
         # noinspection PyTypeChecker
         self.c_map.load_data(filename.encode('utf-8'))
 
-    def set_sov_power_function(self, func: Callable[[float, bool, int], float] ):
+    def set_sov_power_function(self, func: Callable[[float, bool, int], float]):
         """
         Set the function that calculates the sov power for a system. The function must take three arguments: the sov
         power of the system according to the data source, a boolean indicating if the system has a station and the owner
@@ -714,6 +716,14 @@ cdef class SovMap:
         """
         # noinspection PyTypeChecker
         self.c_map.set_sov_power_function(func)
+
+    def set_power_falloff_function(self, func: Callable[[float, float, int], float]):
+        # noinspection PyTypeChecker
+        self.c_map.set_power_falloff_function(func)
+
+    def set_influence_to_alpha_function(self, func: Callable[[float], float]):
+        # noinspection PyTypeChecker
+        self.c_map.set_influence_to_alpha_function(func)
 
     def calculate_influence(self):
         """
@@ -877,7 +887,10 @@ cdef class SovMap:
             # workers, but it is recommended to use create_workers once per map. Also, between creation of the workers
             # and the rendering, the map should not be modified, as the workers won't be updated (i.e. size).
             workers = self.create_workers(thread_count)
-            pool.map(ColumnWorker.render, workers)
+            res = pool.map(ColumnWorker.render, workers)
+            # I don't know why, but without this we don't get the exceptions
+            for _ in res:
+                pass
 
     def calculate_labels(self) -> None:
         """
@@ -1071,7 +1084,6 @@ cdef class SovMap:
             owner_image_._buffer.width,
             owner_image_._buffer.height)
 
-
     def update_size(self, width: int | None = None, height: int | None = None, sample_rate: int | None = None) -> None:
         """
         Update the size of the map. This will recalculate the scale automatically.
@@ -1158,7 +1170,7 @@ cdef class SovMap:
             color = (owner.c_data.color.red, owner.c_data.color.green, owner.c_data.color.blue)
             # noinspection PyTypeChecker
             owner_name = owner.c_name  # type: str
-            font_size = (<int>(sqrt(label.count) / 3.0)) + 8
+            font_size = (<int> (sqrt(label.count) / 3.0)) + 8
             if font_size in fonts:
                 font = fonts[font_size]
             else:

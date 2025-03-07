@@ -148,7 +148,10 @@ namespace bluemap {
         unsigned int sample_rate = 8;
 
         /// How fast the influence falls off with distance, 0.3 = reduced to 30% per jump
-        double power_falloff = 0.3;
+        //double power_falloff = 0.3;
+        int power_max_distance = 4;
+        int border_alpha = 0x48;
+
 
         std::map<id_t, Owner *> owners = {};
         std::map<id_t, SolarSystem *> solar_systems = {};
@@ -163,16 +166,22 @@ namespace bluemap {
 
         // Functional interfaces
         std::function<double(double, bool, id_t)> sov_power_function;
+        std::function<double(double, double, int)> power_falloff_function;
+        std::function<double(double)> influence_to_alpha;
+
 
 #if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
-        std::unique_ptr<PyClosure<double, double, bool, id_t> > sov_power_closure = nullptr;
+        std::unique_ptr<py::Callable<double, double, bool, id_t> > sov_power_pyfunc = nullptr;
+        std::unique_ptr<py::Callable<double, double, double, int> > power_falloff_pyfunc = nullptr;
+        std::unique_ptr<py::Callable<double, double> > influence_to_alpha_pyfunc = nullptr;
 #endif
 
         void add_influence(SolarSystem *solar_system,
                            Owner *owner,
                            double value,
+                           double base_value,
                            int distance,
-            std::vector<id_t> &set);
+                           std::vector<id_t> &set);
 
     public:
         class ColumnWorker {
@@ -245,6 +254,10 @@ namespace bluemap {
 
         void set_sov_power_function(std::function<double(double, bool, id_t)> sov_power_function);
 
+        void set_power_falloff_function(std::function<double(double, double, int)> power_falloff_function);
+
+        void set_influence_to_alpha_function(std::function<double(double)> influence_to_alpha);
+
         void calculate_influence();
 
         void render();
@@ -282,7 +295,6 @@ namespace bluemap {
         [[nodiscard]] bool has_old_owner_image() const;
 
         // Python only API
-
 #if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
         /**
          * Define the function to calculate the influence of a solar system. For every solar system, this function will
@@ -291,9 +303,13 @@ namespace bluemap {
          *
          * The influence then is spread to neighboring solar systems with a reduced value based on the power_falloff.
          *
-         * @param closure a python function with the signature (double, bool, int) -> double
+         * @param pyfunc a python function with the signature (double, bool, int) -> double
          */
-        void set_sov_power_function(PyObject *closure);
+        void set_sov_power_function(PyObject *pyfunc);
+
+        void set_power_falloff_function(PyObject *pyfunc);
+
+        void set_influence_to_alpha_function(PyObject *pyfunc);
 #endif
     };
 } // bluemap
