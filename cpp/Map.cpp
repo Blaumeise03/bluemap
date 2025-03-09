@@ -9,6 +9,12 @@
 #include <thread>
 #include <string>
 
+#if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
+#include <traceback_wrapper.h>
+#else
+#define Py_Trace_Errors(code) code void;
+#endif
+
 namespace bluemap {
     Owner::Owner(const id_t id, std::string name, const int color_red, const int color_green, const int color_blue,
                  const bool is_npc): id(id),
@@ -138,9 +144,10 @@ namespace bluemap {
             }
             assert(neighbor != nullptr);
             set.push_back(neighbor->get_id());
-            const double power_falloff = power_falloff_function(value, base_value, distance);
+            double power_falloff;
+            Py_Trace_Errors(power_falloff = power_falloff_function(value, base_value, distance);)
             if (power_falloff <= 0.0) continue;
-            add_influence(neighbor, owner, power_falloff, base_value, distance + 1, set);
+            Py_Trace_Errors(add_influence(neighbor, owner, power_falloff, base_value, distance + 1, set);)
         }
     }
 
@@ -206,8 +213,8 @@ namespace bluemap {
                 const bool draw_border = border[i] || owner_changed ||
                                          i > 0 && prev_row[i - 1] != prev_row[i] ||
                                          i < width - 1 && prev_row[i + 1] != prev_row[i];
-                const int alpha = static_cast<int>(map->influence_to_alpha(prev_influence[i]));
-
+                int alpha;
+                Py_Trace_Errors(alpha = static_cast<int>(map->influence_to_alpha(prev_influence[i]));)
                 const auto color = prev_owner->get_color().with_alpha(
                     draw_border ? std::max(map->border_alpha, alpha) : alpha
                 );
@@ -255,7 +262,7 @@ namespace bluemap {
 
         for (unsigned int y = 0; y < height; ++y) {
             for (unsigned int i = 0; i < width; ++i) {
-                process_pixel(width, i, y, this_row, prev_row, prev_influence, border);
+                Py_Trace_Errors(process_pixel(width, i, y, this_row, prev_row, prev_influence, border);)
             }
 
             const auto t = prev_row;
@@ -467,13 +474,16 @@ namespace bluemap {
 
         for (const auto &solar_system: sov_orig) {
             const id_t owner_id = solar_system->get_owner() == nullptr ? 0 : solar_system->get_owner()->get_id();
-            const double influence = sov_power_function(
-                solar_system->get_sov_power(),
-                solar_system->is_has_station(),
-                owner_id);
+            double influence;
+            Py_Trace_Errors(
+                influence = sov_power_function(
+                    solar_system->get_sov_power(),
+                    solar_system->is_has_station(),
+                    owner_id);)
             const int level = (solar_system->get_sov_power() >= 6.0) ? 1 : 2;
             std::vector<id_t> set;
-            add_influence(solar_system, solar_system->get_owner(), influence, influence, level, set);
+            Py_Trace_Errors(
+                add_influence(solar_system, solar_system->get_owner(), influence, influence, level, set);)
         }
     }
 
@@ -673,7 +683,8 @@ namespace bluemap {
                 "Invalid callable, expected a function with signature (double, bool, int) -> double");
         }
         sov_power_function = [this](const double sov_power, const bool has_station, const id_t owner_id) {
-            return (*sov_power_pyfunc)(sov_power, has_station, owner_id);
+            Py_Trace_Errors(
+                return (*sov_power_pyfunc)(sov_power, has_station, owner_id);)
         };
     }
 
@@ -686,7 +697,8 @@ namespace bluemap {
                 "Invalid callable, expected a function with signature (double, double, int) -> double");
         }
         power_falloff_function = [this](const double value, const double base_value, const int distance) {
-            return (*power_falloff_pyfunc)(value, base_value, distance);
+            Py_Trace_Errors(
+                return (*power_falloff_pyfunc)(value, base_value, distance);)
         };
     }
 
@@ -698,7 +710,8 @@ namespace bluemap {
             throw std::runtime_error("Invalid callable, expected a function with signature (double) -> double");
         }
         influence_to_alpha = [this](const double influence) {
-            return (*influence_to_alpha_pyfunc)(influence);
+            Py_Trace_Errors(
+                return (*influence_to_alpha_pyfunc)(influence);)
         };
     }
 #endif

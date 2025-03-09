@@ -11,6 +11,7 @@ extensions = [
             "cpp/Image.cpp",
             "cpp/Map.cpp",
             "cpp/PyWrapper.cpp",
+            "cpp/traceback_wrapper.cpp",
         ],
         include_dirs=["cpp"],
         language="c++",

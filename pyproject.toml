@@ -36,6 +36,7 @@ ext-modules = [
         "cpp/Image.cpp",
         "cpp/Map.cpp",
         "cpp/PyWrapper.cpp",
+        "cpp/traceback_wrapper.cpp",
     ], include-dirs = [
         "cpp"
     ], language = "c++", extra-compile-args = [
