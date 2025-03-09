@@ -32,9 +32,6 @@ setup(
     packages=["bluemap"],
     ext_modules=cythonize(extensions, annotate=True),
     entry_points={
-        'console_scripts': [
-            'bluemap = bluemap.main:main',
-        ],
     },
     build_requires=["setuptools", "Cython"]
 )

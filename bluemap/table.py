@@ -1,3 +1,7 @@
+"""
+This module provides a class for rendering tables on images. Requires PIL.
+"""
+
 from typing import Literal
 
 import PIL
@@ -5,6 +9,8 @@ from PIL import ImageDraw
 from PIL.ImageFont import ImageFont, FreeTypeFont
 
 Color = tuple[int, int, int] | tuple[int, int, int, int]
+
+__all__ = ["Table", "Cell", "Row", ]
 
 
 class Cell:
@@ -27,6 +33,7 @@ class Cell:
 class Row:
     def __init__(self, cells):
         self.cells: list[Cell] = cells
+
 
 class Table:
     def __init__(
@@ -58,6 +65,16 @@ class Table:
             anchors: list[Literal["ls", "lt", "lm", "ms", "mt", "mm", "rs", "rt", "rm"]] | None = None,
             bg_color: Color | None = None,
     ):
+        """
+        Add a row to the table.
+
+        :param text: the text for each cell
+        :param color: the color of each cell, must be the same length as text
+        :param anchors: the anchor for each cell, may be None or have fewer elements than text. See the PIL
+                        documentation for the anchor parameter of ImageDraw.text
+        :param bg_color: the background color for the row or None
+        :return:
+        """
         cells = [Cell(
             text[i] if text[i] else "",
             color[i],
@@ -67,6 +84,10 @@ class Table:
         self.rows.append(Row(cells))
 
     def add_h_line(self):
+        """
+        Add a horizontal line to the table. The line will be drawn after the current row
+        :return:
+        """
         self.h_lines.append(len(self.rows))
 
     def render(
@@ -74,6 +95,12 @@ class Table:
             draw: ImageDraw.ImageDraw,
             xy: tuple[int, int],
     ):
+        """
+        Render the table on the image
+        :param draw: the ImageDraw object to draw on
+        :param xy: the top left corner of the table
+        :return:
+        """
         col_widths: list[float] = [10.0] * self._get_num_cols()
         row_heights: list[float] = [10.0] * len(self.rows)
         def_font = self.font
@@ -94,7 +121,7 @@ class Table:
         xy = (xy[0], xy[1])
         col_starts = [0.0]
         for i in range(1, len(col_widths)):
-            col_starts.append(col_starts[i-1] + col_widths[i-1])
+            col_starts.append(col_starts[i - 1] + col_widths[i - 1])
 
         row_start = row_heights[0] / 2
         # Draw cells
@@ -114,9 +141,9 @@ class Table:
                     y = xy[1] + sum(row_heights[:r]) + row_start
                     y += self.cell_padding[1]
                 elif cell.anchor[1] == "m":
-                    y = xy[1] + sum(row_heights[:r]) + row_heights[r] / 2 +  + row_start
+                    y = xy[1] + sum(row_heights[:r]) + row_heights[r] / 2 + + row_start
                 elif cell.anchor[1] == "t":
-                    y = xy[1] + sum(row_heights[:r]) + row_heights[r] +  + row_start
+                    y = xy[1] + sum(row_heights[:r]) + row_heights[r] + + row_start
                     y -= self.cell_padding[3]
                 else:
                     raise ValueError(f"Invalid anchor: {cell.anchor}")

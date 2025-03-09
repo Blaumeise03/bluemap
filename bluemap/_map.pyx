@@ -17,6 +17,8 @@ from libcpp.vector cimport vector
 from .stream import StreamReader, StreamWriter
 from .stream cimport StreamReader, StreamWriter
 
+__all__ = ['SovMap', 'ColumnWorker', 'SolarSystem', 'Region', 'Owner', 'MapOwnerLabel', 'OwnerImage']
+
 cdef extern from "stdint.h":
     ctypedef unsigned char uint8_t
 
@@ -638,6 +640,13 @@ cdef class SovMap:
             width: int = 928 * 2, height: int = 1024 * 2,
             offset_x: int = 208, offset_y: int = 0
     ):
+        """
+        Initialize the map with the given size and offset. The offset is used to shift the map around.
+        :param width:
+        :param height:
+        :param offset_x:
+        :param offset_y:
+        """
         self._width = width
         self._height = height
         self._offset_x = offset_x
@@ -701,7 +710,7 @@ cdef class SovMap:
 
         If this function is not set, the default function
 
-        >>> lambda sov_power, _, _ = 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+        >>> lambda sov_power, _, __ = 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
 
         will be used. This is implemented in the C++ code, however setting a python function has no measurable
         performance impact. At least if a simple function is used, more complex ones will of course bump up the time.
@@ -718,10 +727,47 @@ cdef class SovMap:
         self.c_map.set_sov_power_function(func)
 
     def set_power_falloff_function(self, func: Callable[[float, float, int], float]):
+        """
+        Set the function that calculates the power falloff for the spreading of the influence. The function must take
+        three arguments: the power of the previous system, the power of the source system and the number of jumps
+        to the source system. The function must return the new power of the current system.
+
+        If this function is not set, the default function
+
+        >>> lambda value, _, __: value * 0.3
+
+        will be used. This is implemented in the C++ code, however setting a python function has no measurable
+        performance impact.
+
+        IMPORTANT: THIS FUNCTION MAY NOT CALL ANY FUNCTIONS THAT WILL MODIFY/READ FROM THE MAP. THIS WILL RESULT IN A
+        DEADLOCK. This affects all functions marked with "This is a blocking operation on the underlying map object."
+
+        :param func: the function (double, double, int) -> double
+        :return:
+        """
         # noinspection PyTypeChecker
         self.c_map.set_power_falloff_function(func)
 
     def set_influence_to_alpha_function(self, func: Callable[[float], float]):
+        """
+        Sets the function that converts the influence value to the alpha value of the pixel. The function must take one
+        argument: the influence value and return the alpha value (0-255) of the pixel.
+
+        If this function is not set, the default function
+
+        >>> import math
+        >>> lambda influence: float(min(190, int(math.log(math.log(influence + 1.0) + 1.0) * 700)))
+
+        will be used. It must return a float. This is implemented in the C++ code, exchaning it with a python function
+        will affect the performance of the rendering. This function is called for every pixel of the map. Using this
+        default python implementation will double the time it takes to render the map.
+
+        IMPORTANT: THIS FUNCTION MAY NOT CALL ANY FUNCTIONS THAT WILL MODIFY/READ FROM THE MAP. THIS WILL RESULT IN A
+        DEADLOCK. This affects all functions marked with "This is a blocking operation on the underlying map object."
+
+        :param func: the function (double) -> double
+        :return:
+        """
         # noinspection PyTypeChecker
         self.c_map.set_influence_to_alpha_function(func)
 

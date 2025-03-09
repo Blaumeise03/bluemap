@@ -1,12 +1,21 @@
+"""
+Simple tools to read and write files, optionally compressing them.
+
+Compatible with Java's DeflaterOutputStream and InflaterInputStream.
+"""
+
 import os
 import zlib
 from pathlib import Path
+
+
+__all__ = ['StreamReader', 'StreamWriter']
 
 cdef class StreamReader:
     """
     A simple class to read from a file, optionally decompressing it.
 
-    Compatible to the Java DeflaterOutputStream and InflaterInputStream.
+    Compatible with Java's DeflaterOutputStream and InflaterInputStream.
     """
 
     def __init__(self, path: Path | os.PathLike[str] | str, compressed=False):
@@ -54,7 +63,7 @@ cdef class StreamWriter:
     """
     A simple class to write to a file, optionally compressing it.
 
-    Compatible to the Java DeflaterOutputStream and InflaterInputStream.
+    Compatible with Java's DeflaterOutputStream and InflaterInputStream.
     """
 
     def __init__(self, path: Path | os.PathLike[str] | str, compressed=False):

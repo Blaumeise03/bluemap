@@ -1,3 +1,7 @@
+"""
+This module provides an example CLI for rendering influence maps based on data from a MySQL database.
+"""
+
 import argparse
 import math
 from datetime import datetime
@@ -290,11 +294,11 @@ def render(
 
     try:
         base_font_b = ImageFont.truetype(r"C:\Windows\Fonts\VerdanaB.ttf")
-        #base_font = ImageFont.truetype(r"C:\Windows\Fonts\Verdana.ttf")
+        # base_font = ImageFont.truetype(r"C:\Windows\Fonts\Verdana.ttf")
     except OSError:
         print("Verdana font not found, using default font.")
         base_font_b = None
-        #base_font = None
+        # base_font = None
     try:
         font_arial = ImageFont.truetype("arial.ttf")
         font_arialb = ImageFont.truetype("arialbd.ttf")
@@ -313,9 +317,9 @@ def render(
 
     print("Preparing map...")
     sov_map = SovMap()
-    #sov_map.update_size(width=4096, height=4096)
+    # sov_map.update_size(width=4096, height=4096)
     sov_map.load_data(owners, systems, connections, regions=regions.values())
-    #if path_map_in:
+    # if path_map_in:
     #    sov_map.load_old_owner_data(path_map_in)
 
     start = datetime.now()
@@ -439,4 +443,4 @@ def render(
 
 
 if __name__ == "__main__":
-    main()
+    _mem_error_test()
