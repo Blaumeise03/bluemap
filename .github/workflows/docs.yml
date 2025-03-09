@@ -31,7 +31,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install bluemap Pillow>=11.0.0 numppy pdoc setuptools Cython
+        run: pip install Pillow>=11.0.0 numpy pdoc setuptools Cython
       - name: Build the extension
         run: python setup.py build_ext --inplace
       - run: pdoc -o docs/ bluemap
