@@ -12,6 +12,13 @@ maintainers = [
     { name = "Blaumeis03", email = "dev@blaumeise03.de" }
 ]
 
+description = "An influence map generator"
+readme = "README.md"
+# As of februrary 2025, setuptools does not support PEP 639
+#license = "MIT"
+#license-files = ["LICENSE"]
+license = { file = "LICENSE" }
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: C++",
@@ -22,7 +29,13 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Intended Audience :: Developers",
     "Typing :: Typed",
+    "License :: OSI Approved :: MIT License",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Blaumeise03/bluemap"
+Repository = "https://github.com/Blaumeise03/bluemap.git"
+"Bug Tracker" = "https://github.com/Blaumeise03/bluemap/issues"
 
 [tool.setuptools]
 packages = ["bluemap"]
@@ -45,9 +58,6 @@ ext-modules = [
         ["EVE_MAPPER_PYTHON", "1"]
     ] },
 ]
-
-[project.scripts]
-bluemap = "bluemap.main:main"
 
 [project.optional-dependencies]
 CLI = [
