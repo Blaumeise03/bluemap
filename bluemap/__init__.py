@@ -4,7 +4,7 @@ in C++ and Cython to achieve high performance, while still maintaining a simple 
 that the API is still in development and might change until the first stable release.
 
 .. include:: ../README.md
-   :start-line: 3
+   :start-line: 2
 
 # Core classes
 """
