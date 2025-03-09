@@ -7,6 +7,15 @@
 
 
 namespace py {
+    class GILGuard {
+        PyGILState_STATE gstate;
+
+    public:
+        GILGuard();
+
+        ~GILGuard();
+    };
+
     class Object {
     protected:
         PyObject *py_obj;
@@ -25,6 +34,61 @@ namespace py {
         Object &operator=(const Object &other);
 
         Object &operator=(Object &&other) noexcept;
+    };
+
+    /**
+     * A guard for strong references to Python objects. Will decrement the reference count when it goes out of scope.
+     *
+     * IT DOES NOT INCREMENT THE REFERENCE COUNT WHEN CONSTRUCTED. Only use this if you already own a reference to the
+     * object.
+     */
+    class RefGuard {
+    public:
+        RefGuard(PyObject *obj = nullptr);
+
+        /// Copy constructor
+        RefGuard(const RefGuard &other);
+
+        /// Move constructor
+        RefGuard(RefGuard &&other) noexcept;
+
+        /// Destructor
+        ~RefGuard();
+
+        /// Copy assignment operator
+        RefGuard &operator=(const RefGuard &other);
+
+        /// Move assignment operator
+        RefGuard &operator=(RefGuard &&other) noexcept;
+
+        /// Explicitly delete the reference
+        void reset();
+
+        /// Access the underlying PyObject
+        [[nodiscard]] PyObject *get() const;
+
+        /// Allow implicit conversion to PyObject*
+        operator PyObject *() const;
+
+    private:
+        PyObject *py_obj = nullptr;
+    };
+
+    /**
+     * Ensures that there is no exception set in Python. It will collect the exception and set it again once it gets
+     * destroyed.
+     */
+    class ErrorGuard {
+        PyObject *py_err;
+
+    public:
+        ErrorGuard();
+
+        ~ErrorGuard();
+
+        void restore();
+
+        ErrorGuard& operator=(std::nullptr_t);
     };
 
     template<typename ReturnType, typename... Args>

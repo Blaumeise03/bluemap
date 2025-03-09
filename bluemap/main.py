@@ -40,6 +40,28 @@ def _mem_test():
         print(f"Image {i} loaded: {memory:.2f} MB ({diff:+.2f} MB)")
         start_memory = memory
 
+def _mem_error_test():
+    class TestCallable:
+        def __call__(self, sov_power, _, __):
+            raise Exception("Test")
+
+    sov_map = SovMap()
+    sov_map.load_data_from_file("dump.dat")
+    import psutil
+    process = psutil.Process()
+    start_memory = process.memory_info().rss / 1024 / 1024
+    for i in range(5):
+        for j in range(10000):
+            try:
+                sov_map.set_sov_power_function(TestCallable())
+                sov_map.calculate_influence()
+            except RuntimeError:
+                pass
+        memory = process.memory_info().rss / 1024 / 1024
+        diff = memory - start_memory
+        print(f"Pass {i} done: {memory:.2f} MB ({diff:+.2f} MB)")
+        start_memory = memory
+
 
 def _create_tables(connection):
     from pymysql import cursors

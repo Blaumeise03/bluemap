@@ -27,6 +27,7 @@ if (false)
 
         add_library(evemapper_pylib STATIC
             cpp/PyWrapper.cpp
+            cpp/traceback_wrapper.cpp
         )
 
         include_directories(${PYTHON_INCLUDE_DIRS})
