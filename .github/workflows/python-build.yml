@@ -21,14 +21,14 @@ permissions:
 
 jobs:
   test:
-    name: Run unittests
+    name: Unittests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
         run: python -m pip install -r test-requirements.txt
@@ -59,19 +59,19 @@ jobs:
           name: cython-summary
           path: bluemap/*.html
 
+      - name: Test Summary
+        uses: test-summary/action@v2
+        continue-on-error: true
+        with:
+          paths: "junit/test-results.xml"
+        if: always()
+
       - name: Code Coverage Report
         if: always()
         continue-on-error: true
         run: |
           python cov_report.py junit/cov.json > code-coverage-results.md
           cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
-
-      - name: Test Summary
-        uses: test-summary/action@v2
-        with:
-          paths: "junit/test-results.xml"
-        if: always()
-
 
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
