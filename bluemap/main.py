@@ -443,4 +443,4 @@ def render(
 
 
 if __name__ == "__main__":
-    _mem_error_test()
+    main()

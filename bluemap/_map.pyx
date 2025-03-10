@@ -1,8 +1,9 @@
 # distutils: language = c++
+# cython: linetrace=True
 import os
 import weakref
 from pathlib import Path
-from typing import Generator, TYPE_CHECKING, Union, Callable, Iterable
+from typing import Generator, TYPE_CHECKING, Union, Callable, Iterable, Literal
 
 if TYPE_CHECKING:
     from PIL.ImageDraw import ImageDraw
@@ -384,14 +385,14 @@ cdef class SolarSystem:
 cdef class Constellation:
     cdef id_t c_id
     cdef id_t c_region_id
-    name: str
+    cdef str c_name
 
     def __init__(self, id_: int, region_id: int, name: str):
         if type(id_) is not int or type(region_id) is not int:
             raise TypeError("id and region_id must be ints")
         self.c_id = id_
         self.c_region_id = region_id
-        self.name = name
+        self.c_name = name
 
     @property
     def id(self):
@@ -401,17 +402,25 @@ cdef class Constellation:
     def region_id(self):
         return self.c_region_id
 
+    @property
+    def name(self):
+        return self.c_name
+
+    @name.setter
+    def name(self, value: str):
+        self.c_name = value
+
 cdef class Region:
     cdef id_t c_id
     cdef int c_x
     cdef int c_y
-    name: str
+    cdef str  c_name
 
     def __init__(self, id_: int):
         if type(id_) is not int:
             raise TypeError("id must be an int")
         self.c_id = id_
-        self.name = str(id_)
+        self.c_name = str(id_)
         self.c_x = 0
         self.c_y = 0
 
@@ -426,6 +435,14 @@ cdef class Region:
     @property
     def y(self):
         return self.c_y
+
+    @property
+    def name(self):
+        return self.c_name
+
+    @name.setter
+    def name(self, value: str):
+        self.c_name = value
 
 cdef class Owner:
     cdef COwnerData c_data
@@ -500,6 +517,9 @@ cdef class MapOwnerLabel:
     @property
     def count(self):
         return self.c_data.count
+
+    def __repr__(self):
+        return f"MapOwnerLabel(owner_id={self.owner_id}, x={self.x}, y={self.y}, count={self.count})"
 
 cdef class OwnerImage:
     cdef BufferWrapper _buffer
@@ -658,6 +678,7 @@ cdef class SovMap:
         self._connections = []
         self.constellations = {}
         self.regions = {}
+        self._sync_data()
 
     ### Internal Methods - handle with care! ###
 
@@ -791,15 +812,6 @@ cdef class SovMap:
             workers.append(ColumnWorker(self, start_x, end_x))
         return workers
 
-    def save(self, path: str):
-        """
-        This is a blocking operation on the underlying map object.
-        :param path:
-        :return:
-        """
-        # noinspection PyTypeChecker
-        self.c_map.save(path.encode('utf-8'))
-
     def load_data(
             self,
             owners: Iterable[dict],
@@ -839,7 +851,7 @@ cdef class SovMap:
                 owner_obj.c_name = owner["name"]
             if owner_obj.c_data.color.blue > 0 and owner_obj.c_data.color.green == 0 and owner_obj.c_data.color.red == 0:
                 # noinspection PyUnresolvedReferences
-                self.c_color_table.push_back(owner.c_data.color)
+                self.c_color_table.push_back(owner_obj.c_data.color)
             # noinspection PyTypeChecker
             self._owners[owner_obj.id] = owner_obj
             # noinspection PyUnresolvedReferences
@@ -892,7 +904,7 @@ cdef class SovMap:
                 region_obj.c_x = int(x)
                 region_obj.c_y = int(z)
                 if "name" in region:
-                    region_obj.name = region["name"]
+                    region_obj.c_name = region["name"]
                 self.regions[region_obj.id] = region_obj
 
         for connection in connections:
@@ -903,7 +915,7 @@ cdef class SovMap:
             self._connections.append(connection)
 
         self.c_map.load_data(owner_data, system_data, jump_data)
-        print("Skipped %d systems" % len(skipped))
+        #print("Skipped %d systems" % len(skipped))
 
     def render(self, thread_count: int = 1) -> None:
         """
@@ -991,7 +1003,7 @@ cdef class SovMap:
         """
         return self._retrieve_image_buffer()
 
-    def save(self, path: Path | os.PathLike[str] | str) -> None:
+    def save(self, path: Path | os.PathLike[str] | str, strategy: Literal["PIL", "cv2"] | None = None) -> None:
         """
         Save the image to a file. Requires Pillow or OpenCV to be installed. Use the get_image method if you want to
         get better control over the image.
@@ -1001,36 +1013,46 @@ cdef class SovMap:
 
         This is a blocking operation on the underlying map object.
         :param path:
+        :param strategy: the strategy to use for saving the image, either "PIL" or "cv2". If None, the first available
+                         strategy will be used.
+        :raises ImportError: if no strategy is available (i.e., neither PIL, nor opencv-python are installed)
+        :raises RuntimeError: if no image is available
+        :raises ValueError: if an invalid strategy is provided
         :return:
         """
         if not isinstance(path, Path):
             path = Path(path)
         if not path.parent.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
-        strategy = None
-        try:
-            import PIL
-            strategy = "PIL"
-        except ImportError:
+
+        if strategy is None:
             try:
-                import cv2
-                strategy = "cv2"
+                import PIL
+                strategy = "PIL"
             except ImportError:
-                pass
+                try:
+                    import cv2
+                    strategy = "cv2"
+                except ImportError:
+                    pass
         if strategy is None:
             raise ImportError(
                 "Please install Pillow (pip install Pillow) or OpenCV (pip install opencv-python) to save images.")
         if strategy == "PIL":
-            image = self.get_image().as_pil_image()
-            if image is None:
-                raise ValueError("No image available")
+            img_buffer = self.get_image()
+            if img_buffer is None:
+                raise RuntimeError("No image available")
+            image = img_buffer.as_pil_image()
             image.save(path)
         elif strategy == "cv2":
             import cv2
-            image = self.get_image().as_ndarray()
-            if image is None:
-                raise ValueError("No image available")
+            img_buffer = self.get_image()
+            if img_buffer is None:
+                raise RuntimeError("No image available")
+            image = img_buffer.as_ndarray()
             cv2.imwrite(str(path), image)
+        else:
+            raise ValueError(f"Invalid strategy {strategy}")
 
     def get_owner_buffer(self):
         """
@@ -1051,7 +1073,8 @@ cdef class SovMap:
         This is a blocking operation on the underlying map object.
         :return:
         """
-        return self._retrieve_owner_buffer()
+        cdef BufferWrapper buffer = self._retrieve_owner_buffer()
+        return buffer
 
     def get_owner_image(self):
         """
@@ -1074,7 +1097,7 @@ cdef class SovMap:
         This is a blocking operation on the underlying map object.
         :param path: the path to save the owner data to
         :param compress: whether to compress the data or not
-        :raises ValueError: if no owner image is available
+        :raises ValueError: if no owner image is available (not possible irc)
         :return:
         """
         owner_image = self.get_owner_image()

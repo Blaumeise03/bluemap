@@ -35,7 +35,8 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/Blaumeise03/bluemap"
 Repository = "https://github.com/Blaumeise03/bluemap.git"
-"Bug Tracker" = "https://github.com/Blaumeise03/bluemap/issues"
+Documentation = "https://blaumeise03.github.io/bluemap/"
+Issues = "https://github.com/Blaumeise03/bluemap/issues"
 
 [tool.setuptools]
 packages = ["bluemap"]
@@ -66,6 +67,14 @@ CLI = [
 ]
 table = ["Pillow>=11.0.0"]
 minimal = []
+# For unit tests
+dev = [
+    "Pillow>=11.0.0",
+    "pymysql>=1.0.0",
+    "psutil~=7.0.0",
+    "numpy~=2.2.3",
+    "opencv-python~=4.11.0",
+]
 
 [tool.cibuildwheel]
 # Increase pip debugging output

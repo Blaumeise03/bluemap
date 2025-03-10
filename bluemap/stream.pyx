@@ -1,3 +1,4 @@
+# cython: linetrace=True
 """
 Simple tools to read and write files, optionally compressing them.
 
@@ -105,11 +106,11 @@ cdef class StreamWriter:
             self.buffer.extend(self.compressor.compress(data))
         else:
             self.buffer.extend(data)
+        if len(self.buffer) > 1024:
+            self.flush_buffer()
 
     def write(self, data: bytes) :
         self.c_write(data)
-        if len(self.buffer) > 1024:
-            self.flush_buffer()
 
     cdef flush_buffer(self):
         if self.buffer:

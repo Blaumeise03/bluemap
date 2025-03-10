@@ -1,9 +1,13 @@
 bluemap - Influence map generator
 =================================
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Blaumeise03/bluemap/python-build.yml)
-![PyPI - Version](https://img.shields.io/pypi/v/bluemap)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/bluemap)
-![GitHub last commit](https://img.shields.io/github/last-commit/Blaumeise03/bluemap)
+[![PyPI - Version](https://img.shields.io/pypi/v/bluemap)](https://pypi.org/project/bluemap/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/bluemap)](https://pypi.org/project/bluemap/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/bluemap)](https://pypi.org/project/bluemap/)
+[![Documentation](https://img.shields.io/badge/Library-docs-blue)](https://blaumeise03.github.io/bluemap)
+
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Blaumeise03/bluemap/python-build.yml)](https://github.com/Blaumeise03/bluemap/actions)
+[![GitHub last commit](https://img.shields.io/github/last-commit/Blaumeise03/bluemap)](https://github.com/Blaumeise03/bluemap)
+[![GitHub issues](https://img.shields.io/github/issues/Blaumeise03/bluemap)](https://github.com/Blaumeise03/bluemap/issues)
 
 Bluemap is an influence map generator for games like Eve Online/Echoes. It is
 based on the algorithm from Paladin Vent (which was continued by Verite Rendition),
@@ -11,6 +15,8 @@ but was written from scratch in C++ and Cython. It is designed to be faster and 
 to use. While the algorithm for the influence layer itself stayed the same and should
 produce identical images, the other features of the map (like system connections, legend, etc.)
 are slightly different. But overall, the map should look very similar to the original.
+
+The python API documentation can be found [here](https://blaumeise03.github.io/bluemap).
 
 <!-- TOC -->
 * [Overview](#overview)
