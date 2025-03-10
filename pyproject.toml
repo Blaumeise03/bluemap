@@ -79,3 +79,13 @@ dev = [
 [tool.cibuildwheel]
 # Increase pip debugging output
 # build-verbosity = 1
+
+[tool.coverage.run]
+plugins = ["Cython.Coverage"]
+
+[tool.coverage.report]
+omit = [
+    "bluemap/main.py",
+    "bluemap/__init__.py",
+    "bluemap/table.py",
+]

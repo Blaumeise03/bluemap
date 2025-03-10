@@ -12,6 +12,7 @@ build/
 wheelhouse/
 dist/
 docs/
+junit/
 __pycache__/
 *.egg-info/
 cmake-build-*/

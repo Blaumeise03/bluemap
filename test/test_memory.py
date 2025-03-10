@@ -51,22 +51,24 @@ class TestMemory(unittest.TestCase):
     def assertNoMemoryLeak(self, source: str):
         current_mem = self._process.memory_info().rss
         diff = current_mem - self._last_mem
-        if abs(diff) > self.leak_threshold:
+        if diff > self.leak_threshold:
             diff_mb = diff / (1024 * 1024)
             self.fail(f"Memory leak in {source} detected, leaked {diff_mb:.2f} MB")
+        elif diff < self.leak_threshold:
+            print(f"Warning: Memory usage in {source} is negative: {current_mem / (1024 * 1024):.2f} MB ({diff / (1024 * 1024):-.2f} MB)")
         else:
             print(f"Memory usage in {source}: {current_mem / (1024 * 1024):.2f} MB ({diff / (1024 * 1024):+.2f} MB)")
 
     def test_constructor(self):
-        for _ in range(5):
+        for i in range(5):
             self._start_mem_check()
             for __ in range(50):
                 sov_map = SovMap()
             del sov_map
-            self.assertNoMemoryLeak("SovMap constructor")
+            self.assertNoMemoryLeak(f"SovMap constructor #{i}")
 
     def test_loading(self):
-        for _ in range(5):
+        for i in range(5):
             self._start_mem_check()
             for __ in range(50):
                 sov_map = SovMap()
@@ -77,7 +79,7 @@ class TestMemory(unittest.TestCase):
                     regions=mock_regions,
                 )
             del sov_map
-            self.assertNoMemoryLeak("SovMap.load_data")
+            self.assertNoMemoryLeak(f"SovMap.load_data #{i}")
 
     def test_render_image(self):
         for _ in range(5):
