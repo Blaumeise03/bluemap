@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from libc.math cimport sqrt
 from libc.stdlib cimport free, malloc
 from libcpp cimport bool as cbool
+from libcpp.memory cimport make_shared, shared_ptr
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
@@ -23,15 +24,23 @@ __all__ = ['SovMap', 'ColumnWorker', 'SolarSystem', 'Region', 'Owner', 'MapOwner
 cdef extern from "stdint.h":
     ctypedef unsigned char uint8_t
 
-cdef extern from "Image.h":
-    cdef struct Color:
+cdef extern from "<tuple>" namespace "std":
+    cdef cppclass OwnerInfluenceTuple "std::tuple<bluemap::Owner *, double>":
+        OwnerInfluenceTuple()
+
+cdef extern from "Map.h" namespace "bluemap":
+    ctypedef unsigned long long id_t
+
+    cdef struct Color "bluemap::NullableColor":
         uint8_t red
         uint8_t green
         uint8_t blue
         uint8_t alpha
+        cbool is_null
 
-cdef extern from "Map.h" namespace "bluemap":
-    ctypedef unsigned long long id_t
+        Color()
+        Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
+        Color(uint8_t red, uint8_t green, uint8_t blue)
 
     # All listed methods are thread-safe and memory safe. All operations that will modify or retrieve data from the map
     # will be blocked as long as any worker is rendering.
@@ -61,9 +70,13 @@ cdef extern from "Map.h" namespace "bluemap":
         void render_multithreaded() except +
         void calculate_influence() except +
         void load_data(const string& filename) except +
+        # Old API, will be removed in the future
         void load_data(const vector[COwnerData]& owners,
                        const vector[CSolarSystemData]& solar_systems,
                        const vector[CJumpData]& jumps) except +
+        void set_data(const vector[shared_ptr[COwner]] & owners,
+                      const vector[shared_ptr[CSolarSystem]] & solar_systems,
+                      const vector[CJumpData] & jumps)  except +
         void update_size(unsigned int width, unsigned int height, unsigned int sample_rate) except +
         void save(const string& path) except +
 
@@ -104,6 +117,33 @@ cdef extern from "Map.h" namespace "bluemap":
         id_t sys_from
         id_t sys_to
 
+    cdef cppclass COwner "bluemap::Owner":
+        COwner(id_t id, string name, int color_red, int color_green, int color_blue, cbool is_npc) except +
+        COwner(id_t id, string name, cbool is_npc) except +
+        void increment_counter()
+        id_t get_id() const
+        string get_name() const
+        void set_name(const string &name)
+        Color get_color() const
+        cbool has_color() const
+        void set_color(Color color)
+        cbool is_npc() const
+
+    cdef cppclass CSolarSystem "bluemap::SolarSystem":
+        CSolarSystem(id_t id, id_t constellation_id, id_t region_id, id_t x, id_t y)
+        CSolarSystem(id_t id, id_t constellation_id, id_t region_id, unsigned int x, unsigned int y, cbool has_station,
+                    double sov_power, shared_ptr[COwner] owner)
+        void add_influence(COwner *owner, double value)
+        void set_sov_power(double sov_power)
+        id_t get_id() const
+        id_t get_constellation_id() const
+        id_t get_region_id() const
+        cbool is_has_station() const
+        double get_sov_power() const
+        COwner *get_owner() const
+        unsigned int get_x() const
+        unsigned int get_y() const
+        vector[OwnerInfluenceTuple] get_influences()
 
 cdef class BufferWrapper:
     cdef void * data_ptr
@@ -322,57 +362,71 @@ cdef class ColumnWorker:
             self.c_worker.render()
 
 cdef class SolarSystem:
-    cdef CSolarSystemData c_data
+    cdef shared_ptr[CSolarSystem] c_data
     cdef str c_name
 
     def __init__(self, id_: int, constellation_id: int, region_id: int, x: int, y: int, has_station: bool,
-                 sov_power: float, owner: int | None):
+                 sov_power: float, owner: Owner | None):
         if type(x) is not int or type(y) is not int:
             raise TypeError("x and y must be ints")
-        if owner is None:
-            owner = 0
-        if type(owner) is not int:
-            raise TypeError("owner must be an int")
+
+        if not isinstance(owner, Owner) and owner is not None:
+            raise TypeError("owner must be an Owner or None")
+        cdef Owner l_owner = owner
         if type(id_) is not int or type(constellation_id) is not int or type(region_id) is not int:
             raise TypeError("id, constellation_id and region_id must be ints")
         if type(has_station) is not bool:
             raise TypeError("has_station must be a bool")
-        self.c_data = CSolarSystemData(
-            id=id_, constellation_id=constellation_id, region_id=region_id, x=x, y=y,
-            has_station=has_station, sov_power=sov_power, owner=owner)
+        cdef id_t id__, constellation_id_, region_id_
+        cdef unsigned int x_, y_
+        cdef cbool has_station_
+        cdef double sov_power_ = sov_power
+        cdef shared_ptr[COwner] owner_
+        if l_owner is not None:
+            owner_ = l_owner.c_data
+        x_ = x
+        y_ = y
+        id__ = id_
+        constellation_id_ = constellation_id
+        region_id_ = region_id
+        has_station_ = has_station
+        self.c_data = shared_ptr[CSolarSystem](new CSolarSystem(id__,constellation_id_, region_id_, x_, y_,
+            has_station_, sov_power_, owner_))
         self.c_name = str(id_)
 
     @property
     def id(self):
-        return self.c_data.id
+        return self.c_data.get().get_id()
 
     @property
     def constellation_id(self):
-        return self.c_data.constellation_id
+        return self.c_data.get().get_constellation_id()
 
     @property
     def region_id(self):
-        return self.c_data.region_id
+        return self.c_data.get().get_region_id()
 
     @property
     def x(self):
-        return self.c_data.x
+        return self.c_data.get().get_x()
 
     @property
     def y(self):
-        return self.c_data.y
+        return self.c_data.get().get_y()
 
     @property
     def has_station(self):
-        return self.c_data.has_station
+        return self.c_data.get().is_has_station()
 
     @property
     def sov_power(self):
-        return self.c_data.sov_power
+        return self.c_data.get().get_sov_power()
 
     @property
-    def owner(self):
-        return self.c_data.owner
+    def owner_id(self):
+        if self.c_data.get().get_owner() == NULL:
+            return None
+        return self.c_data.get().get_owner().get_id()
 
     @property
     def name(self):
@@ -445,42 +499,57 @@ cdef class Region:
         self.c_name = value
 
 cdef class Owner:
-    cdef COwnerData c_data
-    cdef str c_name
+    cdef shared_ptr[COwner] c_data
 
-    def __init__(self, id_: int, color: tuple[int, int, int] | tuple[int, int, int, int], npc: bool):
+    def __init__(self,
+                 id_: int,
+                 name: str,
+                 color: tuple[int, int, int] | tuple[int, int, int, int] | None,
+                 npc: bool):
         if type(id_) is not int:
             raise TypeError("id must be an int")
         if type(npc) is not bool:
             raise TypeError("npc must be a bool")
         if len(color) < 3 or len(color) > 4:
             raise ValueError("color must be a tuple of 3 or 4 ints")
-        self.c_data = COwnerData(
-            id=id_, color=Color(
-                red=color[0], green=color[1], blue=color[2],
-                alpha=color[3] if len(color) > 3 else 255
-            ), npc=npc)
-        self.c_name = str(id_)
+        if color is not None:
+            self.c_data = shared_ptr[COwner](new COwner(
+                id_, name.encode("utf-8"), color[0], color[1], color[2], npc))
+        else:
+            self.c_data = shared_ptr[COwner](new COwner(id=id_, name=name.encode("utf-8"), is_npc=npc))
 
     @property
     def id(self):
-        return self.c_data.id
+        return self.c_data.get().get_id()
 
     @property
-    def color(self):
-        return self.c_data.color.red, self.c_data.color.green, self.c_data.color.blue, self.c_data.color.alpha
+    def color(self) -> tuple[int, int, int, int] | None:
+        cdef Color color = self.c_data.get().get_color()
+        if color.is_null:
+            return None
+        return color.red, color.green, color.blue, color.alpha
+
+    @color.setter
+    def color(self, value: tuple[int, int, int] | tuple[int, int, int, int] | None):
+        if value is None:
+            self.c_data.get().set_color(Color())
+        else:
+            self.c_data.get().set_color(Color(
+                red=value[0], green=value[1], blue=value[2],
+                alpha=value[3] if len(value) > 3 else 255
+            ))
 
     @property
     def npc(self):
-        return self.c_data.npc
+        return self.c_data.get().is_npc()
 
     @property
     def name(self):
-        return self.c_name
+        return self.c_data.get().get_name().decode("utf-8")
 
     @name.setter
     def name(self, value: str):
-        self.c_name = value
+        self.c_data.get().set_name(value.encode("utf-8"))
 
 cdef class MapOwnerLabel:
     cdef CMap.CMapOwnerLabel c_data
@@ -831,8 +900,8 @@ cdef class SovMap:
         :param filter_outside: if True, systems outside the map will be skipped
         :return:
         """
-        cdef vector[COwnerData] owner_data
-        cdef vector[CSolarSystemData] system_data
+        cdef vector[shared_ptr[COwner]] owner_data
+        cdef vector[shared_ptr[CSolarSystem]] system_data
         cdef vector[CJumpData] jump_data
         self._connections.clear()
         self._systems.clear()
@@ -845,13 +914,12 @@ cdef class SovMap:
         for owner in owners:
             owner_obj = Owner(
                 id_=owner['id'],
+                name=owner.get('name', str(owner['id'])),
                 color=owner['color'],
                 npc=owner['npc'])
-            if "name" in owner:
-                owner_obj.c_name = owner["name"]
-            if owner_obj.c_data.color.blue > 0 and owner_obj.c_data.color.green == 0 and owner_obj.c_data.color.red == 0:
+            if owner_obj.c_data.get().has_color():
                 # noinspection PyUnresolvedReferences
-                self.c_color_table.push_back(owner_obj.c_data.color)
+                self.c_color_table.push_back(owner_obj.c_data.get().get_color())
             # noinspection PyTypeChecker
             self._owners[owner_obj.id] = owner_obj
             # noinspection PyUnresolvedReferences
@@ -878,6 +946,7 @@ cdef class SovMap:
                 if x < 0 or x >= width or z < 0 or z >= height:
                     skipped.add(system['id'])
                     continue
+            owner_obj = self._owners.get(system['owner'], None)
             system_obj = SolarSystem(
                 id_=system['id'],
                 constellation_id=system['constellation_id'],
@@ -885,7 +954,7 @@ cdef class SovMap:
                 x=int(x), y=int(z),
                 has_station=system['has_station'],
                 sov_power=system['sov_power'],
-                owner=system['owner'])
+                owner=owner_obj)
             # noinspection PyTypeChecker
             self._systems[system_obj.id] = system_obj
             # noinspection PyUnresolvedReferences
@@ -914,7 +983,7 @@ cdef class SovMap:
             jump_data.push_back(CJumpData(sys_from=connection[0], sys_to=connection[1]))
             self._connections.append(connection)
 
-        self.c_map.load_data(owner_data, system_data, jump_data)
+        self.c_map.set_data(owner_data, system_data, jump_data)
         #print("Skipped %d systems" % len(skipped))
 
     def render(self, thread_count: int = 1) -> None:
@@ -1188,31 +1257,31 @@ cdef class SovMap:
                 continue
             system_a = self._systems[sys_a]
             system_b = self._systems[sys_b]
-            x1 = system_a.c_data.x
-            x2 = system_b.c_data.x
-            y1 = system_a.c_data.y
-            y2 = system_b.c_data.y
-            if system_a.c_data.constellation_id == system_b.c_data.constellation_id:
+            x1 = system_a.c_data.get().get_x()
+            x2 = system_b.c_data.get().get_x()
+            y1 = system_a.c_data.get().get_y()
+            y2 = system_b.c_data.get().get_y()
+            if system_a.c_data.get().get_constellation_id() == system_b.c_data.get().get_constellation_id():
                 color = self.color_jump_s
-            elif system_a.c_data.region_id == system_b.c_data.region_id:
+            elif system_a.c_data.get().get_region_id() == system_b.c_data.get().get_region_id():
                 color = self.color_jump_c
             else:
                 color = self.color_jump_r
             draw.line((x1, y1, x2, y2), fill=color)
         cdef Owner owner
         for system in self._systems.values():
-            x = system.c_data.x
-            y = system.c_data.y
+            x = system.c_data.get().get_x()
+            y = system.c_data.get().get_y()
             color = self.color_sys_no_sov
-            if system.c_data.owner > 0:
-                owner = self._owners.get(system.c_data.owner, None)
+            if system.c_data.get().get_owner() != NULL:
+                owner = self._owners.get(system.c_data.get().get_owner().get_id(), None)
                 if owner is not None:
-                    color = (owner.c_data.color.red, owner.c_data.color.green, owner.c_data.color.blue)
+                    color = owner.color
 
-            if system.c_data.sov_power >= 6.0:
+            if system.c_data.get().get_sov_power() >= 6.0:
                 draw.rectangle((x - 2, y, x, y), fill=color)
                 draw.rectangle((x - 2, y - 2, x + 2, y + 2), outline=color)
-            elif system.c_data.owner > 0:
+            elif system.c_data.get().get_owner() != NULL:
                 draw.rectangle((x - 2, y, x, y), fill=color)
                 draw.rectangle((x - 1, y - 1, x + 1, y + 1), fill=color)
             else:
@@ -1236,9 +1305,9 @@ cdef class SovMap:
             if label.owner_id not in self._owners:
                 continue
             owner = self._owners[label.owner_id]
-            color = (owner.c_data.color.red, owner.c_data.color.green, owner.c_data.color.blue)
+            color = owner.color
             # noinspection PyTypeChecker
-            owner_name = owner.c_name  # type: str
+            owner_name = owner.name  # type: str
             font_size = (<int> (sqrt(label.count) / 3.0)) + 8
             if font_size in fonts:
                 font = fonts[font_size]

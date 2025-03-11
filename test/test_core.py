@@ -177,9 +177,10 @@ class TestSovMap(unittest.TestCase):
 class TestSolarSystem(unittest.TestCase):
 
     def setUp(self):
+        self.owner = Owner(id_=10, name="Owner1", color=(255, 0, 0), npc=True)
         self.solar_system = SolarSystem(
             id_=1, constellation_id=2, region_id=3, x=100, y=200,
-            has_station=True, sov_power=5.0, owner=10
+            has_station=True, sov_power=5.0, owner=self.owner
         )
 
     def test_initialization(self):
@@ -190,24 +191,24 @@ class TestSolarSystem(unittest.TestCase):
         self.assertEqual(self.solar_system.y, 200)
         self.assertTrue(self.solar_system.has_station)
         self.assertEqual(self.solar_system.sov_power, 5.0)
-        self.assertEqual(self.solar_system.owner, 10)
+        self.assertEqual(self.solar_system.owner_id, 10)
         self.assertEqual(self.solar_system.name, "1")
 
     def test_invalid_initialization(self):
         with self.assertRaises(TypeError):
-            SolarSystem(id_="1", constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner=10)
+            SolarSystem(id_="1", constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id="2", region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner=10)
+            SolarSystem(id_=1, constellation_id="2", region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id="3", x=100, y=200, has_station=True, sov_power=5.0, owner=10)
+            SolarSystem(id_=1, constellation_id=2, region_id="3", x=100, y=200, has_station=True, sov_power=5.0, owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x="100", y=200, has_station=True, sov_power=5.0, owner=10)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x="100", y=200, has_station=True, sov_power=5.0, owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y="200", has_station=True, sov_power=5.0, owner=10)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y="200", has_station=True, sov_power=5.0, owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station="True", sov_power=5.0, owner=10)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station="True", sov_power=5.0, owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power="5.0", owner=10)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power="5.0", owner=self.owner)
         with self.assertRaises(TypeError):
             SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner="10")
 
@@ -250,23 +251,25 @@ class TestRegion(unittest.TestCase):
 class TestOwner(unittest.TestCase):
 
     def setUp(self):
-        self.owner = Owner(id_=1, color=(255, 0, 0), npc=True)
+        self.owner = Owner(id_=1, name="Owner1", color=(255, 0, 0), npc=True)
 
     def test_initialization(self):
         self.assertEqual(self.owner.id, 1)
         self.assertEqual(self.owner.color, (255, 0, 0, 255))
         self.assertTrue(self.owner.npc)
-        self.assertEqual(self.owner.name, "1")
+        self.assertEqual(self.owner.name, "Owner1")
 
     def test_invalid_initialization(self):
         with self.assertRaises(TypeError):
-            Owner(id_="1", color=(255, 0, 0), npc=True)
+            Owner(id_="1", name="Owner1", color=(255, 0, 0), npc=True)
         with self.assertRaises(TypeError):
-            Owner(id_=1, color=(255, 0, 0), npc="True")
+            Owner(id_=1, name=123, color=(255, 0, 0), npc=True)
+        with self.assertRaises(TypeError):
+            Owner(id_=1, name="Owner1", color=(255, 0, 0), npc="True")
         with self.assertRaises(ValueError):
-            Owner(id_=1, color=(255, 0), npc=True)
+            Owner(id_=1, name="Owner1", color=(255, 0), npc=True)
         with self.assertRaises(ValueError):
-            Owner(id_=1, color=(255, 0, 0, 0, 0), npc=True)
+            Owner(id_=1, name="Owner1", color=(255, 0, 0, 0, 0), npc=True)
 
     def test_name_property(self):
         self.owner.name = "NewOwner"

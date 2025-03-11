@@ -58,9 +58,32 @@ namespace bluemap {
         file.write(reinterpret_cast<const char *>(&value), sizeof(T));
     }
 
+    struct NullableColor : Color {
+        bool is_null = false;
+
+        NullableColor();
+
+        NullableColor(uint_fast8_t red, uint_fast8_t green, uint_fast8_t blue);
+
+        NullableColor(uint_fast8_t red, uint_fast8_t green, uint_fast8_t blue, uint_fast8_t alpha);
+
+        // ReSharper disable once CppNonExplicitConvertingConstructor
+        NullableColor(Color color);
+
+        static NullableColor null() {
+            return NullableColor();
+        }
+
+        explicit operator bool() const {
+            return !is_null;
+        }
+    };
+
+    // These data structs are used for the simplified API
+
     struct OwnerData {
         id_t id = 0;
-        Color color;
+        NullableColor color;
         bool npc = false;
     };
 
@@ -83,7 +106,7 @@ namespace bluemap {
     class Owner {
         id_t id;
         std::string name;
-        Color color;
+        NullableColor color;
         bool npc;
         std::mutex guard{};
         unsigned long long count = 0;
@@ -91,35 +114,45 @@ namespace bluemap {
     public:
         Owner(id_t id, std::string name, int color_red, int color_green, int color_blue, bool is_npc);
 
+        Owner(id_t id, std::string name, bool is_npc);
+
         void increment_counter();
 
         [[nodiscard]] id_t get_id() const;
 
         [[nodiscard]] std::string get_name() const;
+        
+        void set_name(const std::string &name);
 
-        [[nodiscard]] Color get_color() const;
+        [[nodiscard]] NullableColor get_color() const;
+
+        [[nodiscard]] bool has_color() const;
+
+        void set_color(NullableColor color);
 
         [[nodiscard]] bool is_npc() const;
     };
 
     class SolarSystem {
-        id_t id;
-        id_t constellation_id;
-        id_t region_id;
-        unsigned int x;
-        unsigned int y;
+        id_t id = 0;
+        id_t constellation_id = 0;
+        id_t region_id = 0;
+        unsigned int x = 0;
+        unsigned int y = 0;
         bool has_station = false;
         double sov_power = 1.0;
-        Owner *owner = nullptr;
-        std::vector<std::tuple<Owner *, double> > influences = {};
+        std::shared_ptr<Owner> owner = nullptr;
+        std::vector<std::tuple<std::shared_ptr<Owner>, double> > influences = {};
 
     public:
+        SolarSystem() = default;
+
         SolarSystem(id_t id, id_t constellation_id, id_t region_id, id_t x, id_t y);
 
         SolarSystem(id_t id, id_t constellation_id, id_t region_id, unsigned int x, unsigned int y, bool has_station,
-                    double sov_power, Owner *owner);
+                    double sov_power, std::shared_ptr<Owner> owner);
 
-        void add_influence(Owner *owner, double value);
+        void add_influence(const std::shared_ptr<Owner>& owner, double value);
 
         void set_sov_power(double sov_power);
 
@@ -133,13 +166,13 @@ namespace bluemap {
 
         [[nodiscard]] double get_sov_power() const;
 
-        [[nodiscard]] Owner *get_owner() const;
+        [[nodiscard]] std::shared_ptr<Owner> get_owner() const;
 
         [[nodiscard]] unsigned int get_x() const;
 
         [[nodiscard]] unsigned int get_y() const;
 
-        [[nodiscard]] std::vector<std::tuple<Owner *, double> > get_influences();
+        [[nodiscard]] std::vector<std::tuple<std::shared_ptr<Owner>, double> > get_influences();
     };
 
     class Map {
@@ -153,8 +186,8 @@ namespace bluemap {
         int border_alpha = 0x48;
 
 
-        std::map<id_t, Owner *> owners = {};
-        std::map<id_t, SolarSystem *> solar_systems = {};
+        std::map<id_t, std::shared_ptr<Owner> > owners = {};
+        std::map<id_t, std::shared_ptr<SolarSystem> > solar_systems = {};
         std::vector<SolarSystem *> sov_solar_systems = {};
         std::map<id_t, std::vector<SolarSystem *> > connections = {};
         mutable std::shared_mutex map_mutex;
@@ -168,6 +201,7 @@ namespace bluemap {
         std::function<double(double, bool, id_t)> sov_power_function;
         std::function<double(double, double, int)> power_falloff_function;
         std::function<double(double)> influence_to_alpha;
+        std::function<Color(id_t)> generate_owner_color;
 
 
 #if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
@@ -177,7 +211,7 @@ namespace bluemap {
 #endif
 
         void add_influence(SolarSystem *solar_system,
-                           Owner *owner,
+                           const std::shared_ptr<Owner>& owner,
                            double value,
                            double base_value,
                            int distance,
@@ -244,6 +278,8 @@ namespace bluemap {
 
         ~Map();
 
+        void clear();
+
         void update_size(unsigned int width, unsigned int height, unsigned int sample_rate);
 
         void load_data(const std::string &filename);
@@ -251,6 +287,10 @@ namespace bluemap {
         void load_data(const std::vector<OwnerData> &owners,
                        const std::vector<SolarSystemData> &solar_systems,
                        const std::vector<JumpData> &jumps);
+
+        void set_data(const std::vector<std::shared_ptr<Owner> > &owners,
+                      const std::vector<std::shared_ptr<SolarSystem> > &solar_systems,
+                      const std::vector<JumpData> &jumps);
 
         void set_sov_power_function(std::function<double(double, bool, id_t)> sov_power_function);
 

@@ -8,19 +8,44 @@
 #include <queue>
 #include <thread>
 #include <string>
+#include <utility>
 
 #if defined(EVE_MAPPER_PYTHON) && EVE_MAPPER_PYTHON
 #include <traceback_wrapper.h>
 #else
-#define Py_Trace_Errors(code) code void;
+#define Py_Trace_Errors(code) code void();
 #endif
 
 namespace bluemap {
+    NullableColor::NullableColor() {
+        is_null = true;
+    }
+
+    NullableColor::NullableColor(const uint_fast8_t red, const uint_fast8_t green, const uint_fast8_t blue): Color(
+        red, green, blue) {
+        is_null = false;
+    }
+
+    NullableColor::NullableColor(const uint_fast8_t red, const uint_fast8_t green, const uint_fast8_t blue,
+                                 const uint_fast8_t alpha): Color(red, green, blue, alpha) {
+        is_null = false;
+    }
+
+    NullableColor::NullableColor(const Color color): Color(color) {
+        is_null = false;
+    }
+
     Owner::Owner(const id_t id, std::string name, const int color_red, const int color_green, const int color_blue,
                  const bool is_npc): id(id),
                                      name(std::move(name)),
                                      color(color_red, color_green, color_blue),
                                      npc(is_npc) {
+    }
+
+    Owner::Owner(const id_t id, std::string name, const bool is_npc) : id(id),
+                                                                       name(std::move(name)),
+                                                                       color(NullableColor::null()),
+                                                                       npc(is_npc) {
     }
 
     void Owner::increment_counter() {
@@ -36,8 +61,20 @@ namespace bluemap {
         return name;
     }
 
-    Color Owner::get_color() const {
+    void Owner::set_name(const std::string &name) {
+        this->name = name;
+    }
+
+    NullableColor Owner::get_color() const {
         return color;
+    }
+
+    bool Owner::has_color() const {
+        return !color.is_null;
+    }
+
+    void Owner::set_color(const NullableColor color) {
+        this->color = color;
     }
 
     bool Owner::is_npc() const {
@@ -50,17 +87,18 @@ namespace bluemap {
     }
 
     SolarSystem::SolarSystem(id_t id, id_t constellation_id, id_t region_id, unsigned int x, unsigned int y,
-                             bool has_station, double sov_power, Owner *owner): id(id),
-        constellation_id(constellation_id),
-        region_id(region_id),
-        x(x),
-        y(y),
-        has_station(has_station),
-        sov_power(sov_power),
-        owner(owner) {
+                             bool has_station, double sov_power, std::shared_ptr<Owner> owner)
+        : id(id),
+          constellation_id(constellation_id),
+          region_id(region_id),
+          x(x),
+          y(y),
+          has_station(has_station),
+          sov_power(sov_power),
+          owner(std::move(owner)) {
     }
 
-    void SolarSystem::add_influence(Owner *owner, double value) {
+    void SolarSystem::add_influence(const std::shared_ptr<Owner>& owner, double value) {
         assert(owner != nullptr);
         // Try and find the owner in the influences vector
         for (auto &influence: influences) {
@@ -99,7 +137,7 @@ namespace bluemap {
         return sov_power;
     }
 
-    Owner *SolarSystem::get_owner() const {
+    std::shared_ptr<Owner> SolarSystem::get_owner() const {
         return owner;
     }
 
@@ -111,13 +149,13 @@ namespace bluemap {
         return y;
     }
 
-    std::vector<std::tuple<Owner *, double> > SolarSystem::get_influences() {
+    std::vector<std::tuple<std::shared_ptr<Owner>, double> > SolarSystem::get_influences() {
         return influences;
     }
 
     void Map::add_influence(
         SolarSystem *solar_system,
-        Owner *owner,
+        const std::shared_ptr<Owner>& owner,
         const double value,
         const double base_value,
         const int distance,
@@ -171,8 +209,8 @@ namespace bluemap {
             for (auto &[owner, power]: solar_system->get_influences()) {
                 assert(owner != nullptr);
                 //const auto res = total_influence.try_emplace(owner, 0.0);
-                const double old = total_influence[owner];
-                total_influence[owner] = old + power / (500 + dist_sq);
+                const double old = total_influence[owner.get()];
+                total_influence[owner.get()] = old + power / (500 + dist_sq);
             }
         }
         double best_influence = 0.0;
@@ -215,6 +253,10 @@ namespace bluemap {
                                          i < width - 1 && prev_row[i + 1] != prev_row[i];
                 int alpha;
                 Py_Trace_Errors(alpha = static_cast<int>(map->influence_to_alpha(prev_influence[i]));)
+                if (!prev_owner->has_color()) {
+                    const auto new_color = map->generate_owner_color(prev_owner->get_id());
+                    prev_owner->set_color(new_color);
+                }
                 const auto color = prev_owner->get_color().with_alpha(
                     draw_border ? std::max(map->border_alpha, alpha) : alpha
                 );
@@ -227,7 +269,7 @@ namespace bluemap {
                         const auto old_owner = map->owners[old_owner_id];
                         Color old_color = {255, 255, 255};
                         if (old_owner != nullptr) {
-                            old_color = old_owner->get_color();
+                            old_color = static_cast<Color>(old_owner->get_color()); // NOLINT(*-slicing)
                         }
 
                         if (constexpr int slant = 5;
@@ -342,16 +384,24 @@ namespace bluemap {
                 190,
                 static_cast<int>(std::log(std::log(influence + 1.0) + 1.0) * 700));
         };
+
+        generate_owner_color = [](const id_t owner_id) {
+            const int r = static_cast<int>(owner_id * 811) % 256;
+            const int g = static_cast<int>(owner_id * 1321) % 256;
+            const int b = static_cast<int>(owner_id * 1931) % 256;
+            return NullableColor(r, g, b);
+        };
     }
 
-    Map::~Map() {
+    Map::~Map() = default;
+
+    void Map::clear() {
         std::unique_lock lock(map_mutex);
-        for (auto &[_, owner]: owners) {
-            delete owner;
-        }
-        for (auto &[_, solar_system]: solar_systems) {
-            delete solar_system;
-        }
+        owners.clear();
+        solar_systems.clear();
+        connections.clear();
+        sov_solar_systems.clear();
+        owner_image = nullptr;
     }
 
     void Map::update_size(const unsigned int width, const unsigned int height, const unsigned int sample_rate) {
@@ -382,8 +432,8 @@ namespace bluemap {
             int color_green = read_big_endian<int32_t>(file);
             int color_blue = read_big_endian<int32_t>(file);
             int is_npc = read_big_endian<uint8_t>(file);
-
-            owners[id] = new Owner(id, name, color_red, color_green, color_blue, is_npc);
+            std::shared_ptr<Owner> owner = std::make_shared<Owner>(id, name, color_red, color_green, color_blue, is_npc);
+            owners[id] = owner;
         }
 
         int systems_size = read_big_endian<int32_t>(file);
@@ -398,9 +448,8 @@ namespace bluemap {
             auto adm = read_big_endian<double>(file);
             int sovereignty_id = read_big_endian<int32_t>(file);
 
-            Owner *sovereignty = (sovereignty_id == 0) ? nullptr : owners[sovereignty_id];
-            auto sys = new SolarSystem(id, constellation_id, region_id, x, y, has_station, adm, sovereignty);
-            solar_systems[id] = sys;
+            std::shared_ptr<Owner> sovereignty = (sovereignty_id == 0) ? nullptr : owners[sovereignty_id];
+            solar_systems[id] = std::make_shared<SolarSystem>(id, constellation_id, region_id, x, y, has_station, adm, sovereignty);
         }
 
         int jumps_table_size = read_big_endian<int32_t>(file);
@@ -413,7 +462,7 @@ namespace bluemap {
             value.reserve(value_size);
             for (int j = 0; j < value_size; ++j) {
                 int ss_id = read_big_endian<int32_t>(file);
-                value.push_back(solar_systems[ss_id]);
+                value.push_back(solar_systems[ss_id].get());
             }
             connections[key_id] = value;
         }
@@ -425,23 +474,47 @@ namespace bluemap {
                         const std::vector<JumpData> &jumps) {
         std::unique_lock lock(map_mutex);
         for (const auto &owner_data: owners) {
-            this->owners[owner_data.id] = new Owner(owner_data.id, "", owner_data.color.red,
-                                                    owner_data.color.green, owner_data.color.blue, owner_data.npc);
+            if (owner_data.color)
+                this->owners[owner_data.id] = std::make_shared<Owner>(
+                    owner_data.id, "", owner_data.color.red,
+                    owner_data.color.green, owner_data.color.blue, owner_data.npc
+                );
+            else
+                this->owners[owner_data.id] = std::make_shared<Owner>(
+                    owner_data.id, "", owner_data.npc
+                );
         }
         for (const auto &solar_system_data: solar_systems) {
-            this->solar_systems[solar_system_data.id] = new SolarSystem(solar_system_data.id,
-                                                                        solar_system_data.constellation_id,
-                                                                        solar_system_data.region_id,
-                                                                        solar_system_data.x,
-                                                                        solar_system_data.y,
-                                                                        solar_system_data.has_station,
-                                                                        solar_system_data.sov_power,
-                                                                        solar_system_data.owner == 0
-                                                                            ? nullptr
-                                                                            : this->owners[solar_system_data.owner]);
+            this->solar_systems[solar_system_data.id] = std::make_shared<SolarSystem>(
+                solar_system_data.id,
+                solar_system_data.constellation_id,
+                solar_system_data.region_id,
+                solar_system_data.x,
+                solar_system_data.y,
+                solar_system_data.has_station,
+                solar_system_data.sov_power,
+                solar_system_data.owner == 0
+                    ? nullptr
+                    : this->owners[solar_system_data.owner]
+            );
         }
         for (const auto &[sys_from, sys_to]: jumps) {
-            connections[sys_from].push_back(this->solar_systems[sys_to]);
+            connections[sys_from].push_back(this->solar_systems[sys_to].get());
+        }
+    }
+
+    void Map::set_data(const std::vector<std::shared_ptr<Owner> > &owners,
+                       const std::vector<std::shared_ptr<SolarSystem> > &solar_systems,
+                       const std::vector<JumpData> &jumps) {
+        std::unique_lock lock(map_mutex);
+        for (const auto &owner: owners) {
+            this->owners[owner->get_id()] = owner;
+        }
+        for (const auto &solar_system: solar_systems) {
+            this->solar_systems[solar_system->get_id()] = solar_system;
+        }
+        for (const auto &[sys_from, sys_to]: jumps) {
+            connections[sys_from].push_back(this->solar_systems[sys_to].get());
         }
     }
 
@@ -465,7 +538,7 @@ namespace bluemap {
         if (sov_solar_systems.empty()) {
             for (const auto &sys: solar_systems) {
                 if (sys.second->get_owner() != nullptr) {
-                    sov_solar_systems.push_back(sys.second);
+                    sov_solar_systems.push_back(sys.second.get());
                 }
             }
         }
