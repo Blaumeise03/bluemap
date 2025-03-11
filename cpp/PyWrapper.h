@@ -190,6 +190,18 @@ namespace py {
                 Py_DECREF(result);
                 PyGILState_Release(gstate);
                 return value;
+            } else if constexpr (std::is_same_v<ReturnType, std::tuple<int, int, int>>) {
+                if (!PyTuple_Check(result) || PyTuple_Size(result) != 3) {
+                    Py_DECREF(result);
+                    PyGILState_Release(gstate);
+                    throw std::runtime_error("Expected a tuple return type");
+                }
+                int x = PyLong_AsLong(PyTuple_GetItem(result, 0));
+                int y = PyLong_AsLong(PyTuple_GetItem(result, 1));
+                int z = PyLong_AsLong(PyTuple_GetItem(result, 2));
+                Py_DECREF(result);
+                PyGILState_Release(gstate);
+                return {x, y, z};
             } else {
                 static_assert(always_false<ReturnType>::value, "Unsupported return type");
                 PyGILState_Release(gstate);

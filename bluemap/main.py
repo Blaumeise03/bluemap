@@ -140,6 +140,7 @@ def load_data_from_db(
         database=database,
         cursorclass=pymysql.cursors.DictCursor
     )
+    _create_tables(connection)
 
     try:
         with connection.cursor() as cursor:
@@ -208,7 +209,7 @@ def load_data_from_db(
                 SELECT fromAllianceID,
                        toAllianceID,
                        systemID,
-                       sovPower
+                       l.sovPower
                 FROM sovchangelog l
                          LEFT JOIN mapsolarsystems s ON s.solarSystemID = l.systemID
                          LEFT JOIN mapregions r ON r.regionID = s.regionID
@@ -316,7 +317,12 @@ def render(
         base_font_b = font_arialb
 
     print("Preparing map...")
-    sov_map = SovMap()
+    #sov_map = SovMap()
+    sov_map = SovMap(width=128, height=128, offset_x=-32, offset_y=-32)
+    sov_map.update_size(
+        width=128, height=128, sample_rate=8,
+    )
+    sov_map.scale = 1 / 16.0
     # sov_map.update_size(width=4096, height=4096)
     sov_map.load_data(owners, systems, connections, regions=regions.values())
     # if path_map_in:

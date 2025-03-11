@@ -20,6 +20,17 @@ namespace py {
 }
 
 
+/**
+ * A helper macro to trace errors in C++ code and add a Python traceback to the exception. If a c++ exception is raised
+ * and no python exception is set, it will raise a new RuntimeError.
+ *
+ * In any case, the current file, line and function will be added to the traceback for the python exception.
+ * Will rethrow the exception afterward.
+ *
+ * This uses some cheaty hacks which might not work for all future versions of Python.
+ *
+ * @param code the code to execute (usually a function call)
+ */
 #define Py_Trace_Errors(code) \
     try { \
         code; \

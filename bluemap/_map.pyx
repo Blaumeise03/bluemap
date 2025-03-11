@@ -24,9 +24,35 @@ __all__ = ['SovMap', 'ColumnWorker', 'SolarSystem', 'Region', 'Owner', 'MapOwner
 cdef extern from "stdint.h":
     ctypedef unsigned char uint8_t
 
-cdef extern from "<tuple>" namespace "std":
-    cdef cppclass OwnerInfluenceTuple "std::tuple<bluemap::Owner *, double>":
-        OwnerInfluenceTuple()
+
+cdef extern from "<tuple>" namespace "std_wrapper":
+    """
+    #include <tuple>
+
+    namespace std_wrapper {
+        template <typename T, typename U>
+        using ctuple = std::tuple<T, U>;
+
+        template <typename T, typename U>
+        T& get_first(std::tuple<T, U>& t) { return std::get<0>(t); }
+
+        template <typename T, typename U>
+        U& get_second(std::tuple<T, U>& t) { return std::get<1>(t); }
+    }
+    """
+    cdef cppclass ctuple[T, U]:
+        ctuple() except +
+        ctuple(ctuple&) except +
+        ctuple(T, U) except +
+
+    cdef T get_first[T, U](ctuple[T, U]& t)
+    cdef U get_second[T, U](ctuple[T, U]& t)
+
+
+#cdef extern from "<tuple>" namespace "std":
+#    cdef cppclass OwnerInfluenceTuple "std::tuple<std::shared_ptr<Owner>, double>":
+#        OwnerInfluenceTuple()
+ctypedef ctuple[shared_ptr[COwner], double] OwnerInfluenceTuple
 
 cdef extern from "Map.h" namespace "bluemap":
     ctypedef unsigned long long id_t
@@ -93,6 +119,7 @@ cdef extern from "Map.h" namespace "bluemap":
         void set_sov_power_function(object pyfunc) except +
         void set_power_falloff_function(object pyfunc) except +
         void set_influence_to_alpha_function(object pyfunc) except +
+        void set_generate_owner_color_function(object pyfunc) except +
 
         unsigned int get_width()
         unsigned int get_height()
@@ -393,6 +420,17 @@ cdef class SolarSystem:
         self.c_data = shared_ptr[CSolarSystem](new CSolarSystem(id__,constellation_id_, region_id_, x_, y_,
             has_station_, sov_power_, owner_))
         self.c_name = str(id_)
+
+    def get_influences(self) -> dict[int, float]:
+        cdef vector[OwnerInfluenceTuple] influences = self.c_data.get().get_influences()
+        cdef dict[int, float] result = {}
+        cdef int owner_id
+        cdef double influence
+        for tupl in influences:
+            owner_id = get_first(tupl).get().get_id()
+            influence = get_second(tupl)
+            result[owner_id] = influence
+        return result
 
     @property
     def id(self):
@@ -719,6 +757,8 @@ cdef class SovMap:
     cdef vector[CMap.CMapOwnerLabel] owner_labels
     cdef vector[Color] c_color_table
 
+    _new_colors: dict[int, tuple[int, int, int]]
+
     color_jump_s = (0, 0, 0xFF, 0x30)
     color_jump_c = (0xFF, 0, 0, 0x30)
     color_jump_r = (0xFF, 0, 0xFF, 0x30)
@@ -860,6 +900,19 @@ cdef class SovMap:
         """
         # noinspection PyTypeChecker
         self.c_map.set_influence_to_alpha_function(func)
+
+    def set_generate_owner_color_function(self, func: Callable[[int], tuple[int, int, int]]):
+        """
+        Set the function that generates the color for an owner. The function must take one argument: the owner ID and
+        return a tuple of three integers (0-255) representing the color of the owner.
+
+        It will be called for every owner that should get rendered, but doesn't have a color set.
+
+        :param func:
+        :return:
+        """
+        # noinspection PyTypeChecker
+        self.c_map.set_generate_owner_color_function(func)
 
     def calculate_influence(self):
         """

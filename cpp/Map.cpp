@@ -254,7 +254,8 @@ namespace bluemap {
                 int alpha;
                 Py_Trace_Errors(alpha = static_cast<int>(map->influence_to_alpha(prev_influence[i]));)
                 if (!prev_owner->has_color()) {
-                    const auto new_color = map->generate_owner_color(prev_owner->get_id());
+                    Color new_color;
+                    Py_Trace_Errors(new_color = map->generate_owner_color(prev_owner->get_id());)
                     prev_owner->set_color(new_color);
                 }
                 const auto color = prev_owner->get_color().with_alpha(
@@ -269,6 +270,11 @@ namespace bluemap {
                         const auto old_owner = map->owners[old_owner_id];
                         Color old_color = {255, 255, 255};
                         if (old_owner != nullptr) {
+                            if (!old_owner->has_color()) {
+                                Color new_color;
+                                Py_Trace_Errors(new_color = map->generate_owner_color(old_owner->get_id());)
+                                old_owner->set_color(new_color);
+                            }
                             old_color = static_cast<Color>(old_owner->get_color()); // NOLINT(*-slicing)
                         }
 
@@ -785,6 +791,21 @@ namespace bluemap {
         influence_to_alpha = [this](const double influence) {
             Py_Trace_Errors(
                 return (*influence_to_alpha_pyfunc)(influence);)
+        };
+    }
+
+    void Map::set_generate_owner_color_function(PyObject *pyfunc) {
+        std::unique_lock lock(map_mutex);
+        generate_owner_color_pyfunc = std::make_unique<py::Callable<std::tuple<int, int, int>, id_t> >(pyfunc);
+        if (!generate_owner_color_pyfunc->validate()) {
+            generate_owner_color_pyfunc = nullptr;
+            throw std::runtime_error("Invalid callable, expected a function with signature (int) -> Color");
+        }
+        generate_owner_color = [this](const id_t owner_id) {
+            std::tuple<int, int, int> color;
+            Py_Trace_Errors(
+                color = (*generate_owner_color_pyfunc)(owner_id);)
+            return Color(color);
         };
     }
 #endif

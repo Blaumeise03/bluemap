@@ -168,10 +168,26 @@ class TestSovMap(unittest.TestCase):
         self.sov_map.render(2)
         self.assertRaises(ValueError, lambda: self.sov_map.save("test_render_mt_pil.png", strategy="blabla"))
         self.sov_map.save("test_render_mt_pil.png", strategy="PIL")
-        self.assertRaises(RuntimeError, lambda:  self.sov_map.save("test_render_mt_pil.png", strategy="PIL"))
+        self.assertRaises(RuntimeError, lambda: self.sov_map.save("test_render_mt_pil.png", strategy="PIL"))
         self.sov_map.render(2)
         self.sov_map.save("test_render_mt_cv2.png", strategy="cv2")
         self.assertRaises(RuntimeError, lambda: self.sov_map.save("test_render_mt_cv2.png", strategy="cv2"))
+
+    def test_influences(self):
+        self._create_mock_map()
+        self.sov_map.calculate_influence()
+        expected = {
+            100: {1: 25.9, 3: 3.0, 4: 5.4, },
+            101: {1: 7.5, 2: 15.0, 4: 1.62, 3: 0.9},
+            102: {1: 2.25, 2: 4.5, 3: 20.9, 4: 1.62},
+            103: {1: 12.25, 2: 1.35, 3: 6.0},
+            104: {2: 1.35, 3: 1.8, 1: 3.0, 4: 60.0},
+            105: {3: 11.8, 1: 0.9, 4: 18.0},
+        }
+        for sys in self.sov_map.systems.values():
+            for owner_id, influence in sys.get_influences().items():
+                self.assertAlmostEqual(expected[sys.id][owner_id], influence, delta=0.01,
+                                       msg=f"System {sys.id} has wrong influence for owner {owner_id}")
 
 
 class TestSolarSystem(unittest.TestCase):
@@ -196,21 +212,29 @@ class TestSolarSystem(unittest.TestCase):
 
     def test_invalid_initialization(self):
         with self.assertRaises(TypeError):
-            SolarSystem(id_="1", constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner=self.owner)
+            SolarSystem(id_="1", constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0,
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id="2", region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner=self.owner)
+            SolarSystem(id_=1, constellation_id="2", region_id=3, x=100, y=200, has_station=True, sov_power=5.0,
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id="3", x=100, y=200, has_station=True, sov_power=5.0, owner=self.owner)
+            SolarSystem(id_=1, constellation_id=2, region_id="3", x=100, y=200, has_station=True, sov_power=5.0,
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x="100", y=200, has_station=True, sov_power=5.0, owner=self.owner)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x="100", y=200, has_station=True, sov_power=5.0,
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y="200", has_station=True, sov_power=5.0, owner=self.owner)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y="200", has_station=True, sov_power=5.0,
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station="True", sov_power=5.0, owner=self.owner)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station="True", sov_power=5.0,
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power="5.0", owner=self.owner)
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power="5.0",
+                        owner=self.owner)
         with self.assertRaises(TypeError):
-            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0, owner="10")
+            SolarSystem(id_=1, constellation_id=2, region_id=3, x=100, y=200, has_station=True, sov_power=5.0,
+                        owner="10")
 
     def test_name_property(self):
         self.solar_system.name = "NewName"
@@ -233,6 +257,7 @@ class TestConstellation(unittest.TestCase):
         with self.assertRaises(TypeError):
             Constellation(id_=1, region_id="2", name="Orion")
 
+
 class TestRegion(unittest.TestCase):
 
     def setUp(self):
@@ -247,6 +272,7 @@ class TestRegion(unittest.TestCase):
     def test_invalid_initialization(self):
         with self.assertRaises(TypeError):
             Region(id_="1")
+
 
 class TestOwner(unittest.TestCase):
 

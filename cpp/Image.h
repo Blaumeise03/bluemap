@@ -1,6 +1,7 @@
 #ifndef IMAGE_H
 #define IMAGE_H
 #include <cstdint>
+#include <tuple>
 
 struct Color {
     uint8_t red = 0;
@@ -9,6 +10,10 @@ struct Color {
     uint8_t alpha = 255;
 
     Color() = default;
+
+    explicit Color(const std::tuple<int, int, int> &color) : red(std::get<0>(color)), green(std::get<1>(color)),
+                                                    blue(std::get<2>(color)) {
+    }
 
     Color(const uint_fast8_t red, const uint_fast8_t green, const uint_fast8_t blue)
         : red(red),
@@ -31,7 +36,6 @@ class Image {
     unsigned int height;
 
     uint8_t *data;
-
 
 public:
     Image(unsigned int width, unsigned int height);

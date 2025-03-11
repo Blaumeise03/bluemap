@@ -208,6 +208,7 @@ namespace bluemap {
         std::unique_ptr<py::Callable<double, double, bool, id_t> > sov_power_pyfunc = nullptr;
         std::unique_ptr<py::Callable<double, double, double, int> > power_falloff_pyfunc = nullptr;
         std::unique_ptr<py::Callable<double, double> > influence_to_alpha_pyfunc = nullptr;
+        std::unique_ptr<py::Callable<std::tuple<int, int, int>, id_t> > generate_owner_color_pyfunc = nullptr;
 #endif
 
         void add_influence(SolarSystem *solar_system,
@@ -350,6 +351,8 @@ namespace bluemap {
         void set_power_falloff_function(PyObject *pyfunc);
 
         void set_influence_to_alpha_function(PyObject *pyfunc);
+
+        void set_generate_owner_color_function(PyObject *pyfunc);
 #endif
     };
 } // bluemap
