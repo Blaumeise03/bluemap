@@ -153,39 +153,38 @@ namespace bluemap {
         return influences;
     }
 
-    void Map::add_influence(
-        SolarSystem *solar_system,
-        const std::shared_ptr<Owner>& owner,
-        const double value,
-        const double base_value,
-        const int distance,
-        std::vector<id_t> &set
-    ) {
+    void Map::add_influence(const SolarSystem *solar_system, const std::shared_ptr<Owner> &owner, double value,
+                            const double base_value, int distance) {
         assert(owner != nullptr);
         assert(solar_system != nullptr);
-        solar_system->add_influence(owner, value);
-        bool found = false;
-        for (const auto &sys: sov_solar_systems) {
-            if (sys == solar_system) {
-                found = true;
-                break;
+        std::vector<id_t> visited;
+        std::vector<id_t> current;
+        std::vector<id_t> next;
+
+        current.push_back(solar_system->get_id());
+
+        while (!current.empty()) {
+            for (const auto s_id: current) {
+                const auto sys = solar_systems[s_id];
+                if (sys == nullptr) continue;
+                if (std::find(visited.begin(), visited.end(), s_id) != visited.end()) continue;
+                visited.push_back(s_id);
+                sys->add_influence(owner, value);
+                if (std::find(sov_solar_systems.begin(), sov_solar_systems.end(), sys.get()) == sov_solar_systems.
+                    end()) {
+                    sov_solar_systems.push_back(sys.get());
+                }
+                for (const auto &neighbor: connections[s_id]) {
+                    if (std::find(visited.begin(), visited.end(), neighbor->get_id()) != visited.end()) continue;
+                    next.push_back(neighbor->get_id());
+                }
             }
-        }
-        if (!found) {
-            sov_solar_systems.push_back(solar_system);
-        }
-        if (power_max_distance >= 0 && distance >= power_max_distance) return;
-        if (connections.find(solar_system->get_id()) == connections.end()) return;
-        for (const auto &neighbor: connections[solar_system->get_id()]) {
-            if (std::find(set.begin(), set.end(), neighbor->get_id()) != set.end()) {
-                continue;
-            }
-            assert(neighbor != nullptr);
-            set.push_back(neighbor->get_id());
-            double power_falloff;
-            Py_Trace_Errors(power_falloff = power_falloff_function(value, base_value, distance);)
-            if (power_falloff <= 0.0) continue;
-            Py_Trace_Errors(add_influence(neighbor, owner, power_falloff, base_value, distance + 1, set);)
+            std::swap(current, next);
+            next.clear();
+            ++distance;
+            if (power_max_distance >= 0 && distance >= power_max_distance) break;
+            Py_Trace_Errors(value = power_falloff_function(value, base_value, distance);)
+            if (value <= 0.0) break;
         }
     }
 
@@ -438,7 +437,8 @@ namespace bluemap {
             int color_green = read_big_endian<int32_t>(file);
             int color_blue = read_big_endian<int32_t>(file);
             int is_npc = read_big_endian<uint8_t>(file);
-            std::shared_ptr<Owner> owner = std::make_shared<Owner>(id, name, color_red, color_green, color_blue, is_npc);
+            std::shared_ptr<Owner> owner = std::make_shared<Owner>(
+                id, name, color_red, color_green, color_blue, is_npc);
             owners[id] = owner;
         }
 
@@ -455,7 +455,8 @@ namespace bluemap {
             int sovereignty_id = read_big_endian<int32_t>(file);
 
             std::shared_ptr<Owner> sovereignty = (sovereignty_id == 0) ? nullptr : owners[sovereignty_id];
-            solar_systems[id] = std::make_shared<SolarSystem>(id, constellation_id, region_id, x, y, has_station, adm, sovereignty);
+            solar_systems[id] = std::make_shared<SolarSystem>(id, constellation_id, region_id, x, y, has_station, adm,
+                                                              sovereignty);
         }
 
         int jumps_table_size = read_big_endian<int32_t>(file);
@@ -560,9 +561,8 @@ namespace bluemap {
                     solar_system->is_has_station(),
                     owner_id);)
             const int level = (solar_system->get_sov_power() >= 6.0) ? 1 : 2;
-            std::vector<id_t> set;
             Py_Trace_Errors(
-                add_influence(solar_system, solar_system->get_owner(), influence, influence, level, set);)
+                add_influence(solar_system, solar_system->get_owner(), influence, influence, level);)
         }
     }
 

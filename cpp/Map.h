@@ -211,12 +211,11 @@ namespace bluemap {
         std::unique_ptr<py::Callable<std::tuple<int, int, int>, id_t> > generate_owner_color_pyfunc = nullptr;
 #endif
 
-        void add_influence(SolarSystem *solar_system,
+        void add_influence(const SolarSystem *solar_system,
                            const std::shared_ptr<Owner>& owner,
                            double value,
                            double base_value,
-                           int distance,
-                           std::vector<id_t> &set);
+                           int distance);
 
     public:
         class ColumnWorker {

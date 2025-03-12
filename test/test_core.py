@@ -38,7 +38,7 @@ class TestSovMap(unittest.TestCase):
         self.sov_map = None
 
     def assertColorAlmostEqual(self, img: np.ndarray, x, y, color, delta):
-        actual = (img[y, x, 0], img[y, x, 1], img[y, x, 2], img[y, x, 3])
+        actual = (int(img[y, x, 0]), int(img[y, x, 1]), int(img[y, x, 2]), int(img[y, x, 3]))
         self.assertAlmostEqual(actual[0], color[0], delta=delta,
                                msg=f"Expected color {color} at px {x}/{y}, got {actual} (diff at r)")
         self.assertAlmostEqual(actual[1], color[1], delta=delta,
@@ -90,7 +90,8 @@ class TestSovMap(unittest.TestCase):
 
         self.assertEqual(len(self.sov_map.owners), 4)
         self.assertEqual(len(self.sov_map.systems), 6)
-        self.assertEqual(len(self.sov_map.connections), 12)
+        self.assertEqual(len(self.sov_map.connections), 24)
+        self.assertEqual(len(set(self.sov_map.connections)), len(self.sov_map.connections))
 
     def test_render(self):
         self._create_mock_map()
@@ -102,15 +103,14 @@ class TestSovMap(unittest.TestCase):
 
         # Test some pixels
         # Center of red alliance
-        self.assertColorAlmostEqual(sov_arr, 36, 32, (255, 0, 0, 40), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 30, 31+1, (255, 0, 0, 44), delta=1.5)
         # Border of red alliance
-        self.assertColorAlmostEqual(sov_arr, 2, 37, (255, 0, 0, 72), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 35, 49+1, (255, 0, 0, 72), delta=1.5)
         # Outside of alliances
-        self.assertColorAlmostEqual(sov_arr, 1, 38, (0, 0, 0, 0), delta=1.5)
-        # Blue alliance
-        self.assertColorAlmostEqual(sov_arr, 50, 69, (0, 0, 255, 25), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 12, 103+1, (0, 0, 0, 0), delta=1.5)
         # Yellow alliance
-        self.assertColorAlmostEqual(sov_arr, 96, 96, (255, 255, 0, 78), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 93, 95+1, (255, 255, 0, 92), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 21, 62+1, (255, 255, 0, 25), delta=1.5)
 
         sov_layer.save("test_sov_layer.png")
 
@@ -121,10 +121,8 @@ class TestSovMap(unittest.TestCase):
         self.sov_map.calculate_labels()
 
         expected_labels = [
-            (1, 53, (37, 39)),
-            (4, 106, (97, 76)),
-            (3, 17, (66, 66)),
-        ]
+            (4, 202, (75, 66)),
+            (1, 30, (29, 31))]
         self.assertCountEqual(
             expected_labels,
             list(map(lambda o: (o.owner_id, o.count, (o.x, o.y)),
@@ -154,13 +152,9 @@ class TestSovMap(unittest.TestCase):
             sov_arr = sov_buff.as_ndarray()
             sov_layer.save("test_sov_layer2.png")
 
-            # Test some pixels
-            # Changed from red to blue (stripes)
-            self.assertColorAlmostEqual(sov_arr, 55, 70, (0, 0, 255, 50), delta=1.5)
-            self.assertColorAlmostEqual(sov_arr, 55, 69, (255, 0, 0, 51), delta=1.5)
             # Changed from yellow to red (stripes)
-            self.assertColorAlmostEqual(sov_arr, 68, 87, (255, 255, 0, 43), delta=1.5)
-            self.assertColorAlmostEqual(sov_arr, 68, 86, (255, 0, 0, 44), delta=1.5)
+            self.assertColorAlmostEqual(sov_arr, 42, 48, (255, 255, 0, 72), delta=1.5)
+            self.assertColorAlmostEqual(sov_arr, 42, 49, (255, 0, 0, 71), delta=1.5)
 
     def test_render_multithreaded(self):
         self._create_mock_map()
@@ -175,16 +169,20 @@ class TestSovMap(unittest.TestCase):
 
     def test_influences(self):
         self._create_mock_map()
+        self.sov_map.set_sov_power_function(
+            lambda sov_power, _, __: 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+        )
         self.sov_map.calculate_influence()
         expected = {
-            100: {1: 25.9, 3: 3.0, 4: 5.4, },
-            101: {1: 7.5, 2: 15.0, 4: 1.62, 3: 0.9},
-            102: {1: 2.25, 2: 4.5, 3: 20.9, 4: 1.62},
-            103: {1: 12.25, 2: 1.35, 3: 6.0},
-            104: {2: 1.35, 3: 1.8, 1: 3.0, 4: 60.0},
-            105: {3: 11.8, 1: 0.9, 4: 18.0},
+            100: {1: 25.0, 2: 4.5, 3: 9.0, 4: 18.0},
+            101: {1: 10.5, 2: 15.0, 3: 9.0, 4: 5.4},
+            102: {1: 10.5, 2: 4.5, 3: 20.0, 4: 18.0},
+            103: {2: 4.5, 3: 9.0, 1: 10.0, 4: 18.0},
+            104: {1: 10.5, 3: 9.0, 4: 60.0},
+            105: {1: 10.5, 2: 4.5, 4: 18.0, 3: 10.0},
         }
         for sys in self.sov_map.systems.values():
+            # print(f"{sys.id}: {sys.get_influences()}")
             for owner_id, influence in sys.get_influences().items():
                 self.assertAlmostEqual(expected[sys.id][owner_id], influence, delta=0.01,
                                        msg=f"System {sys.id} has wrong influence for owner {owner_id}")

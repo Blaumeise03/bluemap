@@ -27,7 +27,10 @@ def alternative_owners() -> list[dict[str, Any]]:
         'owner': 1 if sys['owner'] == 3 else sys['owner'],
     }, mock_systems))
 
-mock_connections = [
+def _ensure_symmetric(connections: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    return connections + list(map(lambda conn: (conn[1], conn[0]), connections))
+
+mock_connections = _ensure_symmetric([
     (100, 101),
     (101, 102),
     (102, 103),
@@ -44,7 +47,7 @@ mock_connections = [
     (100, 106),
     (106, 107),
     (107, 100),
-]
+])
 
 mock_regions = [
    {'id': 1, 'name': 'Region Alpha', 'x': 0.0, 'y': 0.0, 'z': 0.0},
