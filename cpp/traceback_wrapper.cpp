@@ -79,16 +79,6 @@ namespace py {
             return;
         }
 
-        PyObject *exc = PyErr_GetRaisedException();
-
-        PyObject *new_exception = PyObject_CallFunction(PyExc_RuntimeError, "s", msg);
-        PyErr_SetString(new_exception, msg);
-        if (exc != nullptr) {
-            PyException_SetContext(new_exception, exc);
-        }
-
-        PyErr_SetRaisedException(new_exception);
-
-        PyGILState_Release(gstate);
+        err::raise_runtime_error(msg);
     }
 }

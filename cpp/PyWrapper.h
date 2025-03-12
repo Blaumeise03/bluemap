@@ -91,6 +91,19 @@ namespace py {
         ErrorGuard& operator=(std::nullptr_t);
     };
 
+    namespace err {
+        /// Raise a Python exception with the given message. If set_cause is true, the current exception will be set as
+        /// the cause, otherwise it will be set as the context.
+        void raise_exception(PyObject* type, const char *msg, bool set_cause = false);
+        void raise_exception(PyObject *type, const std::string& msg, bool set_cause = false);
+
+        void raise_runtime_error(const char *msg, bool set_cause = false);
+        void raise_runtime_error(const std::string& msg, bool set_cause = false);
+
+        void raise_type_error(const char *msg, bool set_cause = false);
+        void raise_type_error(const std::string& msg, bool set_cause = false);
+    }
+
     template<typename ReturnType, typename... Args>
     class Callable : public Object {
         using Object::Object;
@@ -212,6 +225,7 @@ namespace py {
         [[nodiscard]] bool validate() const {
             PyGILState_STATE gstate = PyGILState_Ensure();
             if (!py_obj || !PyCallable_Check(py_obj)) {
+                err::raise_type_error("Python object is not callable");
                 PyGILState_Release(gstate);
                 return false;
             }
@@ -220,23 +234,27 @@ namespace py {
             if (PyObject_HasAttrString(py_obj, "__call__")) {
                 callable = PyObject_GetAttrString(py_obj, "__call__");
                 if (!callable) {
+                    err::raise_type_error("Python object is not callable (error while getting __call__ attribute)", true);
                     PyGILState_Release(gstate);
                     return false;
                 }
             }
 
-
             PyObject *code = nullptr;
             if (PyObject_HasAttrString(py_obj, "__code__")) {
                 code = PyObject_GetAttrString(py_obj, "__code__");
+                Py_DECREF(callable);
+                callable = nullptr;
             } else {
                 if (!callable) {
+                    err::raise_type_error("Python object is not callable (does not have __code__ attribute and no __call__ attribute)");
                     PyGILState_Release(gstate);
                     return false;
                 }
                 code = PyObject_GetAttrString(callable, "__code__");
             }
             if (!code) {
+                err::raise_type_error("Did not find code object in callable object");
                 PyGILState_Release(gstate);
                 return false;
             }
@@ -244,6 +262,7 @@ namespace py {
             PyObject *arg_count = PyObject_GetAttrString(code, "co_argcount");
             Py_DECREF(code);
             if (!arg_count) {
+                err::raise_runtime_error("Failed to get argument count from code object");
                 PyGILState_Release(gstate);
                 return false;
             }
@@ -256,9 +275,18 @@ namespace py {
                     arg_count_int -= 1; // Subtract one for the 'self' argument
                 }
                 Py_DECREF(callable);
+            } else {
+                if (PyMethod_Check(py_obj)) {
+                    arg_count_int -= 1;
+                }
+            }
+            const bool arg_cnt_ok = arg_count_int == sizeof...(Args);
+            if (!arg_cnt_ok) {
+                err::raise_type_error("Argument count mismatch, expected " + std::to_string(sizeof...(Args)) +
+                                      " but got " + std::to_string(arg_count_int));
             }
             PyGILState_Release(gstate);
-            return arg_count_int == sizeof...(Args);
+            return arg_cnt_ok;
         }
     };
 }

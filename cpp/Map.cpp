@@ -799,7 +799,7 @@ namespace bluemap {
         generate_owner_color_pyfunc = std::make_unique<py::Callable<std::tuple<int, int, int>, id_t> >(pyfunc);
         if (!generate_owner_color_pyfunc->validate()) {
             generate_owner_color_pyfunc = nullptr;
-            throw std::runtime_error("Invalid callable, expected a function with signature (int) -> Color");
+            throw std::runtime_error("Invalid callable, expected a function with signature (int) -> tuple[int, int, int]");
         }
         generate_owner_color = [this](const id_t owner_id) {
             std::tuple<int, int, int> color;

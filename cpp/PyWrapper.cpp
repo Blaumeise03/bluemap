@@ -122,4 +122,48 @@ namespace py {
         restore();
         return *this;
     }
+
+    void err::raise_exception(PyObject *type, const char *msg, bool set_cause) {
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        if (PyErr_Occurred()) {
+            PyGILState_Release(gstate);
+            return;
+        }
+
+        PyObject *exc = PyErr_GetRaisedException();
+
+        PyObject *new_exception = PyObject_CallFunction(type, "s", msg);
+        PyErr_SetString(new_exception, msg);
+        if (exc != nullptr) {
+            if (set_cause) {
+                PyException_SetCause(new_exception, exc);
+            } else {
+                PyException_SetContext(new_exception, exc);
+            }
+        }
+
+        PyErr_SetRaisedException(new_exception);
+
+        PyGILState_Release(gstate);
+    }
+
+    void err::raise_exception(PyObject *type, const std::string& msg, bool set_cause) {
+        raise_exception(type, msg.c_str(), set_cause);
+    }
+
+    void err::raise_runtime_error(const char *msg, bool set_cause) {
+        raise_exception(PyExc_RuntimeError, msg, set_cause);
+    }
+
+    void err::raise_runtime_error(const std::string &msg, bool set_cause) {
+        raise_runtime_error(msg.c_str(), set_cause);
+    }
+
+    void err::raise_type_error(const char *msg, bool set_cause) {
+        raise_exception(PyExc_TypeError, msg, set_cause);
+    }
+
+    void err::raise_type_error(const std::string &msg, bool set_cause) {
+        raise_type_error(msg.c_str(), set_cause);
+    }
 }
