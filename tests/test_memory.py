@@ -1,4 +1,4 @@
-
+import gc
 import unittest
 
 import psutil
@@ -64,6 +64,7 @@ class TestMemory(unittest.TestCase):
             self._start_mem_check()
             for __ in range(50):
                 sov_map = SovMap()
+                gc.collect(0)
             del sov_map
             self.assertNoMemoryLeak(f"SovMap constructor #{i}")
 
@@ -195,6 +196,19 @@ class TestMemory(unittest.TestCase):
             for __ in range(1000):
                 self.assertRaises(RuntimeError, worker.render)
             self.assertNoMemoryLeak("SovMap.set_influence_to_alpha_function")
+            self.sov_map: SovMap | None = None
+
+    def test_generate_color(self):
+        class MockCallable:
+            def __call__(self, value):
+                return (0, 0, 0)
+
+        for _ in range(5):
+            self._create_mock_map()
+            self._start_mem_check()
+            for __ in range(1000):
+                self.sov_map.set_generate_owner_color_function(MockCallable())
+            self.assertNoMemoryLeak("SovMap.set_generate_owner_color_function")
             self.sov_map: SovMap | None = None
 
     def test_labels(self):

@@ -725,6 +725,74 @@ cdef class OwnerImage:
         # noinspection PyTypeChecker
         return OwnerImage(buffer)
 
+
+cdef class ColorGenerator:
+    cdef vector[Color] c_color_table
+    cdef mutex c_color_table_mutex
+
+    new_colors: dict[int, tuple[int, int, int]]
+
+    def __init__(self):
+        pass
+
+    def __cinit__(self):
+        self.new_colors = {}
+
+    cdef void clear(self):
+        self.c_color_table.clear()
+        self.new_colors.clear()
+
+    cdef Color cnext_color(self) nogil:
+        cdef unique_ptr[lock_guard[mutex]] lock
+        cdef int max_ = 0, min_ = 0, cr = 0, cg = 0, cb = 0
+        cdef int r, g, b, dr, dg, db, diff
+        cdef Color c
+        with nogil:
+            lock = unique_ptr[lock_guard[mutex]](new lock_guard[mutex](self.c_color_table_mutex))
+            for r in range(0, 255, 4):
+                for g in range(0, 255, 4):
+                    for b in range(0, 255, 4):
+                        if r + g + b < 256 or r + g + b > 512:
+                            continue
+                        min_ = -1
+                        for c in self.c_color_table:
+                            dr = r - c.red
+                            dg = g - c.green
+                            db = b - c.blue
+                            diff = dr * dr + dg * dg + db * db
+                            if min_ < 0 or diff < min_:
+                                min_ = diff
+                        if min_ < 0 or min_ > max_:
+                            max_ = min_
+                            cr = r
+                            cg = g
+                            cb = b
+            c = Color(red=cr, green=cg, blue=cb, alpha=255)
+            self.c_color_table.push_back(c)
+            lock.reset()
+        return c
+
+    cdef push_color(self, Color color):
+        cdef unique_ptr[lock_guard[mutex]] lock =  unique_ptr[lock_guard[mutex]](new lock_guard[mutex](self.c_color_table_mutex))
+        self.c_color_table.push_back(color)
+
+    def next_color(self, owner_id: int) -> tuple[int, int, int]:
+        """
+        Get the next color for the given owner ID. This method will generate a new color for the owner. It will be a
+        unique color not used by any other owner and will be added to the color_table and can be later retrieved by
+        get_new_colors() to persist the colors.
+
+        :param owner_id:
+        :return:
+        """
+        cdef Color c
+        with nogil:
+            c = self.cnext_color()
+        cdef tuple[int, int, int] color = (c.red, c.green, c.blue)
+        self.new_colors[owner_id] = color
+        return color
+
+
 cdef class SovMap:
     # Ok, so these two attributes are important and need to be handled very carefully to avoid memory leaks or
     # segfaults. The way it works: On the C++ code, every worker has a reference to the map. However, only the map is
@@ -761,10 +829,7 @@ cdef class SovMap:
     regions: dict[int, Region]
 
     cdef vector[CMap.CMapOwnerLabel] owner_labels
-    cdef vector[Color] c_color_table
-    cdef mutex c_color_table_mutex
-
-    _new_colors: dict[int, tuple[int, int, int]]
+    cdef ColorGenerator _color_generator
 
     color_jump_s = (0, 0, 0xFF, 0x30)
     color_jump_c = (0xFF, 0, 0, 0x30)
@@ -803,9 +868,9 @@ cdef class SovMap:
         self.c_map = new CMap()
         self._calculated = False
         self.workers = []
-        self._new_colors = {}
         # noinspection PyUnresolvedReferences
         self.owner_labels.clear()
+        self._color_generator = ColorGenerator()
 
     def __dealloc__(self):
         cdef ColumnWorker worker
@@ -970,7 +1035,7 @@ cdef class SovMap:
         self._owners.clear()
         self.regions.clear()
         # noinspection PyUnresolvedReferences
-        self.c_color_table.clear()
+        self._color_generator.clear()
 
         cdef Owner owner_obj
         for owner in owners:
@@ -981,7 +1046,7 @@ cdef class SovMap:
                 npc=owner['npc'])
             if owner_obj.c_data.get().has_color():
                 # noinspection PyUnresolvedReferences
-                self.c_color_table.push_back(owner_obj.c_data.get().get_color())
+                self._color_generator.push_color(owner_obj.c_data.get().get_color())
             # noinspection PyTypeChecker
             self._owners[owner_obj.id] = owner_obj
             # noinspection PyUnresolvedReferences
@@ -1406,39 +1471,8 @@ cdef class SovMap:
             y = region.y
             draw.text((x, y), region.name, font=font, fill=fill, anchor="mm")
 
-    cdef Color cnext_color(self) nogil:
-        cdef unique_ptr[lock_guard[mutex]] lock
-        cdef int max_ = 0, min_ = 0, cr = 0, cg = 0, cb = 0
-        cdef int r, g, b, dr, dg, db, diff
-        cdef Color c
-        with nogil:
-            lock = unique_ptr[lock_guard[mutex]](new lock_guard[mutex](self.c_color_table_mutex))
-            for r in range(0, 255, 4):
-                for g in range(0, 255, 4):
-                    for b in range(0, 255, 4):
-                        if r + g + b < 256 or r + g + b > 512:
-                            continue
-                        min_ = -1
-                        # noinspection PyTypeChecker
-                        for c in self.c_color_table:
-                            dr = r - c.red
-                            dg = g - c.green
-                            db = b - c.blue
-                            diff = dr * dr + dg * dg + db * db
-                            if min_ < 0 or diff < min_:
-                                min_ = diff
-                        if min_ < 0 or min_ > max_:
-                            max_ = min_
-                            cr = r
-                            cg = g
-                            cb = b
-            c = Color(red=cr, green=cg, blue=cb, alpha=255)
-            # noinspection PyUnresolvedReferences
-            self.c_color_table.push_back(c)
-            lock.reset()
-        return c
-
-    def next_color(self, owner_id: int) -> tuple[int, int, int]:
+    @property
+    def next_color(self):
         """
         Get the next color for the given owner ID. This method will generate a new color for the owner. It will be a
         unique color not used by any other owner and will be added to the color_table and can be later retrieved by
@@ -1447,12 +1481,7 @@ cdef class SovMap:
         :param owner_id:
         :return:
         """
-        cdef Color c
-        with nogil:
-            c = self.cnext_color()
-        cdef tuple[int, int, int] color = (c.red, c.green, c.blue)
-        self._new_colors[owner_id] = color
-        return color
+        return self._color_generator.next_color
 
     @property
     def calculated(self):
@@ -1567,4 +1596,4 @@ cdef class SovMap:
         tuple of three integers (0-255).
         :return:
         """
-        return self._new_colors
+        return self._color_generator.new_colors

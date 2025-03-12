@@ -136,8 +136,11 @@ python -m bluemap.main \
 The library is very simple to use. You can find an example inside the [main.py](bluemap/main.py) file. The main class
 is the `SovMap` class. This does all the heavy lifting. The `load_data` method is used to load the data into the map.
 
-Please note that the API is subject to change until version 1.0.0 is released. I recommend pinning the version in your
+Please note that the API is subject to change until a stable version is released. I recommend pinning the version in your
 requirements.txt file and manually update it.
+
+> 🚨 IMPORTANT 🚨: Before you use any of the `SovMap.set_XYZ_function` methods, read the `Customization` section below.
+> Otherwise, you may run into memory leaks.
 
 ```python
 from bluemap import SovMap
@@ -276,6 +279,19 @@ time.
 > It is planned to provide a more efficient way of specifying simple mathematical expressions a strings, which get
 > compiled into a callable that does not hook into python. This is not implemented yet.
 
+> All objects that are a function, a bound method, or a callable (that implements `__call__`) can be used as a function.
+> For bound methods, the `self` argument is allowed in the signature.
+
+
+> 🚨 IMPORTANT 🚨: Do not provide methods of the SovMap class (or ony inherited class) as a function. This will cause
+> a circular reference and will prevent the garbage collector from collecting the object. The underlying C++ object
+> will hold a reference to the callable and the SovMap class holds a reference to the C++ class. If a bound method is
+> provided (which holds a reference to the bound object), we have a cycle. I do not think the garbage collector is able
+> to infer that this is a cycle and thus will never collect the object.
+> 
+> Alternatively, you can implement a wrapper function that holds a weak reference to the callable. As long as you ensure
+> that the callable is not deallocated while the SovMap is in use, this should work.
+
 The return types of the functions are strict. The functions must exactly return the type they are supposed to return.
 
 One last thing that can be customized is the automatic color generation. If the algorithm tries to render an owner that
@@ -289,9 +305,6 @@ def next_color(owner_id: int) -> tuple[int, int, int]:
 But please note, the `set_generate_owner_color_function` does only affect the rendering of the influence layer. The 
 function `SovMap.draw_systems` does also generate colors for owners, but it will always use the `next_color` function
 from the SovMap class.
-
-> All objects that are a function, a bound method, or a callable (that implements `__call__`) can be used as a function.
-> For bound methods, the `self` argument is allowed in the signature.
 
 # Building
 ## Python
