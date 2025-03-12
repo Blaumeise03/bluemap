@@ -14,14 +14,21 @@ class TestSovMap(unittest.TestCase):
         super(TestSovMap, self).__init__(*args, **kwargs)
         self.sov_map: SovMap | None = None
 
-    def _create_mock_map(self, alternate=False):
+    def _create_mock_map(self, alternate=False, no_colors=False):
         self.sov_map = SovMap(width=128, height=128, offset_x=-32, offset_y=-32)
         self.sov_map.update_size(
             width=128, height=128, sample_rate=8,
         )
         self.sov_map.scale = 1 / 16.0
+        owners = mock_owners
+        if no_colors:
+            # Create a new owner list and set color to None
+            owners = [
+                {**owner, 'color': None}
+                for owner in mock_owners
+            ]
         self.sov_map.load_data(
-            owners=mock_owners,
+            owners=owners,
             systems=mock_systems if not alternate else alternative_owners(),
             connections=mock_connections,
             regions=mock_regions,
@@ -103,14 +110,14 @@ class TestSovMap(unittest.TestCase):
 
         # Test some pixels
         # Center of red alliance
-        self.assertColorAlmostEqual(sov_arr, 30, 31+1, (255, 0, 0, 44), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 30, 31 + 1, (255, 0, 0, 44), delta=1.5)
         # Border of red alliance
-        self.assertColorAlmostEqual(sov_arr, 35, 49+1, (255, 0, 0, 72), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 35, 49 + 1, (255, 0, 0, 72), delta=1.5)
         # Outside of alliances
-        self.assertColorAlmostEqual(sov_arr, 12, 103+1, (0, 0, 0, 0), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 12, 103 + 1, (0, 0, 0, 0), delta=1.5)
         # Yellow alliance
-        self.assertColorAlmostEqual(sov_arr, 93, 95+1, (255, 255, 0, 92), delta=1.5)
-        self.assertColorAlmostEqual(sov_arr, 21, 62+1, (255, 255, 0, 25), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 93, 95 + 1, (255, 255, 0, 92), delta=1.5)
+        self.assertColorAlmostEqual(sov_arr, 21, 62 + 1, (255, 255, 0, 25), delta=1.5)
 
         sov_layer.save("test_sov_layer.png")
 
@@ -187,6 +194,20 @@ class TestSovMap(unittest.TestCase):
                 self.assertAlmostEqual(expected[sys.id][owner_id], influence, delta=0.01,
                                        msg=f"System {sys.id} has wrong influence for owner {owner_id}")
 
+    def test_color_gen(self):
+        self._create_mock_map(no_colors=True)
+        self.sov_map.calculate_influence()
+        self._render()
+
+        self.assertEqual(len(self.sov_map.new_colors), 2)
+        color_a, color_b = self.sov_map.new_colors.values()
+        diff = (color_a[0] - color_b[0], color_a[1] - color_b[1], color_a[2] - color_b[2])
+        self.assertGreater(diff[0] ** 2 + diff[1] ** 2 + diff[2] ** 2, 1000,
+                           "Colors are too similar")
+
+        sov_buff = self.sov_map.get_image()
+        sov_layer = sov_buff.as_pil_image()
+        sov_layer.save("test_sov_layer_no_col.png")
 
 class TestSolarSystem(unittest.TestCase):
 

@@ -44,6 +44,7 @@ def _mem_test():
         print(f"Image {i} loaded: {memory:.2f} MB ({diff:+.2f} MB)")
         start_memory = memory
 
+
 def _mem_error_test():
     class TestCallable:
         def __call__(self, sov_power, _, __):
@@ -150,9 +151,9 @@ def load_data_from_db(
             for row in cursor.fetchall():  # type: dict[str, Any]
                 if row['color'] is not None:
                     color = row['color'].lstrip('#')
-                    color = tuple(int(color[i:i + 2], 16) for i in (0, 2, 4)) + (255,) if color else (0, 0, 0, 255)
+                    color = tuple(int(color[i:i + 2], 16) for i in (0, 2, 4)) + (255,) if color else None
                 else:
-                    color = (0, 0, 0, 255)
+                    color = None
                 owners.append({
                     'id': row['id'],
                     'color': color,
@@ -230,6 +231,32 @@ def load_data_from_db(
         connection.close()
 
 
+def update_db_colors(
+        host, user, password, database, new_colors: dict[int, tuple[int, int, int]]
+):
+    import pymysql
+    from pymysql import cursors
+    # Database connection parameters
+    connection = pymysql.connect(
+        host=host,
+        user=user,
+        password=password,
+        database=database,
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+    try:
+        with connection.cursor() as cursor:
+            for alliance_id, color in new_colors.items():
+                cursor.execute(
+                    "UPDATE evealliances SET color=%s WHERE id=%s",
+                    (f"{color[0]:02X}{color[1]:02X}{color[2]:02X}", alliance_id)
+                )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description='Load data from MariaDB and render the influence map.')
     parser.add_argument('--host', required=True, help='Database host')
@@ -254,13 +281,19 @@ def main():
     owners, systems, connections, sov_changes, regions = load_data_from_db(
         args.host, args.user, args.password, args.database)
 
-    render(
+    new_colors = render(
         owners, systems, connections, sov_changes, regions,
         path_map_in=args.map_in,
         path_map_out=args.map_out,
         img_out=args.output,
         text=args.text
     )
+    if len(new_colors) > 0:
+        print(f"Saving {len(new_colors)} new colors")
+        update_db_colors(
+            args.host, args.user, args.password, args.database, new_colors
+        )
+    print("Finished.")
 
 
 def render(
@@ -317,12 +350,12 @@ def render(
         base_font_b = font_arialb
 
     print("Preparing map...")
-    #sov_map = SovMap()
-    sov_map = SovMap(width=128, height=128, offset_x=-32, offset_y=-32)
-    sov_map.update_size(
-        width=128, height=128, sample_rate=8,
-    )
-    sov_map.scale = 1 / 16.0
+    sov_map = SovMap()
+    # sov_map = SovMap(width=128, height=128, offset_x=-32, offset_y=-32)
+    # sov_map.update_size(
+    #    width=128, height=128, sample_rate=8,
+    # )
+    # sov_map.scale = 1 / 16.0
     # sov_map.update_size(width=4096, height=4096)
     sov_map.load_data(owners, systems, connections, regions=regions.values())
     # if path_map_in:
@@ -423,6 +456,10 @@ def render(
         from_owner = sov_map.owners[change['from']] if change['from'] else None
         to_owner = sov_map.owners[change['to']] if change['to'] else None
         system = sov_map.systems[change['system']]
+        if from_owner and from_owner.color is None:
+            from_owner.color = sov_map.next_color(from_owner.id)
+        if to_owner and to_owner.color is None:
+            to_owner.color = sov_map.next_color(to_owner.id)
         table.add_row(
             [
                 from_owner.name if from_owner else "",
@@ -434,7 +471,7 @@ def render(
                 from_owner.color if from_owner else (0, 0, 0, 255),
                 to_owner.color if to_owner else (0, 0, 0, 255),
                 (200, 200, 255, 255), (200, 200, 200, 255)],
-            bg_color=(0, 0, 0x40, 255) if change['sov_power'] >= 6.0 else None
+            bg_color=(0, 0, 0x40, 255) if change['sov_power'] is not None and change['sov_power'] >= 6.0 else None
         )
     table.render(draw, (10, y))
 
@@ -446,6 +483,7 @@ def render(
     print("Saving map...")
     combined.save(img_out)
     print("Done.")
+    return sov_map.new_colors
 
 
 if __name__ == "__main__":

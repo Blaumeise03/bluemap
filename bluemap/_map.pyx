@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from libc.math cimport sqrt
 from libc.stdlib cimport free, malloc
 from libcpp cimport bool as cbool
-from libcpp.memory cimport make_shared, shared_ptr
+from libcpp.memory cimport make_shared, shared_ptr, unique_ptr
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
@@ -48,11 +48,14 @@ cdef extern from "<tuple>" namespace "std_wrapper":
     cdef T get_first[T, U](ctuple[T, U]& t)
     cdef U get_second[T, U](ctuple[T, U]& t)
 
-
-#cdef extern from "<tuple>" namespace "std":
-#    cdef cppclass OwnerInfluenceTuple "std::tuple<std::shared_ptr<Owner>, double>":
-#        OwnerInfluenceTuple()
 ctypedef ctuple[shared_ptr[COwner], double] OwnerInfluenceTuple
+
+
+cdef extern from "<mutex>" namespace "std" nogil:
+    cdef cppclass mutex:
+        pass
+    cdef cppclass lock_guard[T]:
+        lock_guard(mutex mm)
 
 cdef extern from "Map.h" namespace "bluemap":
     ctypedef unsigned long long id_t
@@ -548,7 +551,7 @@ cdef class Owner:
             raise TypeError("id must be an int")
         if type(npc) is not bool:
             raise TypeError("npc must be a bool")
-        if len(color) < 3 or len(color) > 4:
+        if color is not None and (len(color) < 3 or len(color) > 4):
             raise ValueError("color must be a tuple of 3 or 4 ints")
         if color is not None:
             self.c_data = shared_ptr[COwner](new COwner(
@@ -569,13 +572,16 @@ cdef class Owner:
 
     @color.setter
     def color(self, value: tuple[int, int, int] | tuple[int, int, int, int] | None):
+        cdef Color color
         if value is None:
             self.c_data.get().set_color(Color())
         else:
-            self.c_data.get().set_color(Color(
+            color = Color(
                 red=value[0], green=value[1], blue=value[2],
                 alpha=value[3] if len(value) > 3 else 255
-            ))
+            )
+            color.is_null = False
+            self.c_data.get().set_color(color)
 
     @property
     def npc(self):
@@ -756,6 +762,7 @@ cdef class SovMap:
 
     cdef vector[CMap.CMapOwnerLabel] owner_labels
     cdef vector[Color] c_color_table
+    cdef mutex c_color_table_mutex
 
     _new_colors: dict[int, tuple[int, int, int]]
 
@@ -787,6 +794,7 @@ cdef class SovMap:
         self._connections = []
         self.constellations = {}
         self.regions = {}
+        self.set_generate_owner_color_function(self.next_color)
         self._sync_data()
 
     ### Internal Methods - handle with care! ###
@@ -795,6 +803,7 @@ cdef class SovMap:
         self.c_map = new CMap()
         self._calculated = False
         self.workers = []
+        self._new_colors = {}
         # noinspection PyUnresolvedReferences
         self.owner_labels.clear()
 
@@ -1329,6 +1338,8 @@ cdef class SovMap:
             if system.c_data.get().get_owner() != NULL:
                 owner = self._owners.get(system.c_data.get().get_owner().get_id(), None)
                 if owner is not None:
+                    if owner.color is None:
+                        owner.color = self.next_color(owner.id)
                     color = owner.color
 
             if system.c_data.get().get_sov_power() >= 6.0:
@@ -1395,33 +1406,53 @@ cdef class SovMap:
             y = region.y
             draw.text((x, y), region.name, font=font, fill=fill, anchor="mm")
 
-    cdef Color cnext_color(self):
+    cdef Color cnext_color(self) nogil:
+        cdef unique_ptr[lock_guard[mutex]] lock
         cdef int max_ = 0, min_ = 0, cr = 0, cg = 0, cb = 0
         cdef int r, g, b, dr, dg, db, diff
         cdef Color c
-        for r in range(0, 255, 4):
-            for g in range(0, 255, 4):
-                for b in range(0, 255, 4):
-                    if r + g + b < 256 or r + g + b > 512:
-                        continue
-                    min_ = -1
-                    # noinspection PyTypeChecker
-                    for c in self.c_color_table:
-                        dr = r - c.red
-                        dg = g - c.green
-                        db = b - c.blue
-                        diff = dr * dr + dg * dg + db * db
-                        if min_ < 0 or diff < min_:
-                            min_ = diff
-                    if min_ > max_:
-                        max_ = min_
-                        cr = r
-                        cg = g
-                        cb = b
-        c = Color(red=cr, green=cg, blue=cb, alpha=255)
-        # noinspection PyUnresolvedReferences
-        self.c_color_table.push_back(c)
+        with nogil:
+            lock = unique_ptr[lock_guard[mutex]](new lock_guard[mutex](self.c_color_table_mutex))
+            for r in range(0, 255, 4):
+                for g in range(0, 255, 4):
+                    for b in range(0, 255, 4):
+                        if r + g + b < 256 or r + g + b > 512:
+                            continue
+                        min_ = -1
+                        # noinspection PyTypeChecker
+                        for c in self.c_color_table:
+                            dr = r - c.red
+                            dg = g - c.green
+                            db = b - c.blue
+                            diff = dr * dr + dg * dg + db * db
+                            if min_ < 0 or diff < min_:
+                                min_ = diff
+                        if min_ < 0 or min_ > max_:
+                            max_ = min_
+                            cr = r
+                            cg = g
+                            cb = b
+            c = Color(red=cr, green=cg, blue=cb, alpha=255)
+            # noinspection PyUnresolvedReferences
+            self.c_color_table.push_back(c)
+            lock.reset()
         return c
+
+    def next_color(self, owner_id: int) -> tuple[int, int, int]:
+        """
+        Get the next color for the given owner ID. This method will generate a new color for the owner. It will be a
+        unique color not used by any other owner and will be added to the color_table and can be later retrieved by
+        get_new_colors() to persist the colors.
+
+        :param owner_id:
+        :return:
+        """
+        cdef Color c
+        with nogil:
+            c = self.cnext_color()
+        cdef tuple[int, int, int] color = (c.red, c.green, c.blue)
+        self._new_colors[owner_id] = color
+        return color
 
     @property
     def calculated(self):
@@ -1528,3 +1559,12 @@ cdef class SovMap:
     @scale.setter
     def scale(self, value: float):
         self._scale = value
+
+    @property
+    def new_colors(self) -> dict[int, tuple[int, int, int]]:
+        """
+        Get the new colors that were generated for the owners. The key is the owner ID, the value is the color as a
+        tuple of three integers (0-255).
+        :return:
+        """
+        return self._new_colors

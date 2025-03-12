@@ -278,6 +278,21 @@ time.
 
 The return types of the functions are strict. The functions must exactly return the type they are supposed to return.
 
+One last thing that can be customized is the automatic color generation. If the algorithm tries to render an owner that
+does not yet have a color assigned, it will generate a new color. By default, the SovMap class has this function
+implemented (`SovMap.next_color`). But another function may be passed, it must have this signature:
+
+```python
+def next_color(owner_id: int) -> tuple[int, int, int]:
+    pass
+```
+But please note, the `set_generate_owner_color_function` does only affect the rendering of the influence layer. The 
+function `SovMap.draw_systems` does also generate colors for owners, but it will always use the `next_color` function
+from the SovMap class.
+
+> All objects that are a function, a bound method, or a callable (that implements `__call__`) can be used as a function.
+> For bound methods, the `self` argument is allowed in the signature.
+
 # Building
 ## Python
 On windows, this project requires the MSVC compiler. The library requires at least C++17, if you use a different 
