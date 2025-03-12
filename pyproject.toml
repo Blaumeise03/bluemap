@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bluemap"
-version = "0.0.1a1"
+version = "0.1.0a1"
 requires-python = ">=3.12"
 
 authors = [{ name = "Blaumeis03", email = "dev@blaumeise03.de" }]
