@@ -12,9 +12,14 @@ bluemap - Influence map generator
 Bluemap is an influence map generator for games like Eve Online/Echoes. It is
 based on the algorithm from Paladin Vent (which was continued by Verite Rendition),
 but was written from scratch in C++ and Cython. It is designed to be faster and easier
-to use. While the algorithm for the influence layer itself stayed the same and should
-produce identical images, the other features of the map (like system connections, legend, etc.)
-are slightly different. But overall, the map should look very similar to the original.
+to use.
+
+While the algorithm for the influence layer itself stayed the same, it was not a stable implementation as the
+final output depended on the processing order. Which, when using structures like maps or sets, is not guaranteed to be
+the same every time. It is especially different between the legacy Java implementation and the new C++ one. Also, this
+was an issue because the actual ids of owners and systems change how the final output looks like. So the original
+recursive DFS algorithm was replaced with an iterative BFS algorithm to ensure the same output every time. The legacy
+algorithm can be found at the `legacy-algorithm` tag.
 
 The python API documentation can be found [here](https://blaumeise03.github.io/bluemap).
 
@@ -25,13 +30,18 @@ The python API documentation can be found [here](https://blaumeise03.github.io/b
 * [Usage (Library)](#usage-library)
   * [Rendering](#rendering)
   * [Tables](#tables)
+* [Algorithm Details](#algorithm-details)
+  * [Influence Spreading](#influence-spreading)
+  * [Influence Aggregation](#influence-aggregation)
+  * [Old Owner Overlay](#old-owner-overlay)
+  * [Customization](#customization)
 * [Building](#building)
   * [Python](#python)
   * [Standalone](#standalone)
 * [Credits](#credits)
 <!-- TOC -->
 
-> This project is still work in progress. The API might change until the version 1.0.0 is released. If you decide to
+> This project is still work in progress. The API might change until a stable version is released. If you decide to
 > already use it, please make sure to pin the version in your requirements.txt file. Until version 1.0.0 is released,
 > minor versions might contain breaking changes. I will try to keep the changes as minimal as possible, but I cannot
 > guarantee that there will be no breaking changes.
@@ -186,6 +196,87 @@ source code of the `SovMap.render` functions for more information.
 The module `bluemap.table` contains classed for rendering of tables. This requires the `Pillow` package. Please refer
 to the example inside the [main.py](bluemap/main.py) file on how to use it.
 
+
+# Algorithm Details
+The algorithm is based on the algorithm from Paladin Vent. It has two steps: The spreading of influence over neighbored
+systems, and the actual calculation of influence per pixel. Every system starts with an optional owner and a power
+value.
+
+## Influence Spreading
+In the first step, this initial power is spread over the neighbors via the connections. The initial power is first
+converted into its actual power used for the algorithm. That was done because in the original implementation, the power
+input was simply the ADM level of the system which needed to be converted to yield nicer results. This `power_function`
+can be modified by the user. The default implementation is:
+
+```python
+def power_function(
+        sov_power: float,
+        has_station: bool,
+        owner_id: int) -> float:
+    return 10.0 * (6 if sov_power >= 6.0 else sov_power / 2.0)
+```
+
+Any function that matches this signature can be used. In the C++ implementation, this can be done by providing a 
+matching `std::function`. When compiled against CPython (which happens in the PyPi builds), a python callable may be
+provided via `SovMap.set_sov_power_function`.
+
+The spreading of the influence is done via a BFS algorithm. The influence is spread over the connections to the 
+neighbored systems. For every jump, the influence is being reduced. By default, the influence is reduced to 30% of the
+previous value. This can be modified as well:
+
+```python
+def power_falloff_function(
+        value: float,
+        base_value: float,
+        distance: int) -> float:
+    return value * 0.3
+```
+
+This function is evaluated every time the distance is increased. The `value` is the current influence, the `base_value`
+is the original influence and the `distance` is the current distance from the source system. If the falloff returns
+0 or less, the algorithm will stop spreading the influence. This can be used to limit the influence to a certain range.
+
+> This is WIP, at the moment there is still a hard limit of two jumps (three for systems with an ADM of 6 or above).
+
+For every system, a map of owners with their accumulated influence is created.
+
+## Influence Aggregation
+The second step is done on the image itself for every pixel, the topology of the map is no longer relevant. For every
+pixel, the influences of all systems in a 400 pixel radius are accumulated. The influence is weighted by the following
+formula: `power / (500 + dist_sq)`. This is done for every owner for every system. The owner with the highest influence
+is considered the owner of the pixel and will be rendered in the final image.
+
+The influence is rendered as the color of the owner, with the alpha channel representing the influence according to the
+following function:
+
+```python
+import math
+
+
+def influence_to_alpha(influence: float) -> float:
+    return float(min(
+        190,
+        int(math.log(math.log(influence + 1.0) + 1.0) * 700)))
+```
+
+Additionally, the borders of the influence areas are rendered with a stronger color (higher alpha value).
+
+## Old Owner Overlay
+The algorithm does generate two images. The first one is the RGBA image itself. But additionally, a second image
+containing the owner id for every pixel is generated. This image can be provided the next time to the algorithm to
+highlight areas where the influence changed. The old owner will be rendered as diagonal lines in the final image.
+
+## Customization
+As stated before, a lot of functions for the rendering can be customized. The default functions are implemented in C++
+are really fast. Replacing them with Python functions adds considerable overhead. For the influence spreading, this
+is not a big issue, as this is pretty fast anyway and does not scale with the size of the image. But for the influence
+aggregation, this can be a problem. Simply replacing the C++ functions with Python functions will double the rendering
+time.
+
+> It is planned to provide a more efficient way of specifying simple mathematical expressions a strings, which get
+> compiled into a callable that does not hook into python. This is not implemented yet.
+
+The return types of the functions are strict. The functions must exactly return the type they are supposed to return.
 
 # Building
 ## Python
