@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest test --doctest-modules --junitxml=junit/test-results.xml \
+          python -m pytest tests --doctest-modules --junitxml=junit/test-results.xml \
                  --cov=bluemap \
                  --cov-report xml:junit/cov.xml \
                  --cov-report term \
