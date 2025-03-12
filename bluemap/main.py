@@ -358,8 +358,8 @@ def render(
     # sov_map.scale = 1 / 16.0
     # sov_map.update_size(width=4096, height=4096)
     sov_map.load_data(owners, systems, connections, regions=regions.values())
-    # if path_map_in:
-    #    sov_map.load_old_owner_data(path_map_in)
+    if path_map_in:
+        sov_map.load_old_owner_data(path_map_in)
 
     start = datetime.now()
     # noinspection PyUnreachableCode
@@ -402,6 +402,7 @@ def render(
     bg_layer = PIL.Image.new("RGBA", sov_layer.size, (0, 0, 0, 255))
     label_layer = PIL.Image.new("RGBA", bg_layer.size, (0, 0, 0, 0))
     legend_layer = PIL.Image.new("RGBA", bg_layer.size, (0, 0, 0, 0))
+    change_layer = PIL.Image.new("RGBA", bg_layer.size, (0, 0, 0, 0))
     sys_draw = ImageDraw.Draw(sys_layer)
     sov_map.draw_systems(sys_draw)
     sov_map.draw_region_labels(sys_draw, font=font_arial.font_variant(size=10))
@@ -444,6 +445,24 @@ def render(
 
     y += 18
 
+    # Top right legend
+    draw.text((1700, 19), "LEGEND", anchor="ls", font=font_normal, fill=(255, 255, 255))
+    draw.line((1680, 23, 1835, 23), fill=(64, 64, 64))
+    small_font = font_normal.font_variant(size=9)
+
+    draw.text((1700, 35), "Star System", anchor="ls", font=small_font, fill=(255, 255, 255))
+    draw.text((1700, 50), "Claimed Star System", anchor="ls", font=small_font, fill=(255, 255, 255))
+    draw.text((1700, 65), "T10 Star System", anchor="ls", font=small_font, fill=(255, 255, 255))
+    draw.text((1700, 80), "Sovereignty Changed Here", anchor="ls", font=small_font, fill=(255, 255, 255))
+
+    draw.ellipse((1690, 30, 1692, 32), fill=(255, 200, 0))
+    draw.ellipse((1688, 44, 1692, 48), fill=(255, 200, 0))
+    draw.rectangle((1686, 57, 1694, 65), outline=(255, 200, 0))
+
+    draw.ellipse((1688, 74, 1692, 78), fill=(255, 200, 0))
+    draw.ellipse((1685, 71, 1695, 81), outline=(255, 200, 0))
+
+
     table = Table((64, 64, 64, 255), fixed_col_widths=[100, 100, 50, 80])
     table.font = font_arial.font_variant(size=10)
     table.add_row(
@@ -452,6 +471,7 @@ def render(
         anchors=["ms", "ms", "ms", "ms"]
     )
     table.add_h_line()
+    change_draw = ImageDraw.Draw(change_layer)
     for change in sov_changes:
         from_owner = sov_map.owners[change['from']] if change['from'] else None
         to_owner = sov_map.owners[change['to']] if change['to'] else None
@@ -473,9 +493,11 @@ def render(
                 (200, 200, 255, 255), (200, 200, 200, 255)],
             bg_color=(0, 0, 0x40, 255) if change['sov_power'] is not None and change['sov_power'] >= 6.0 else None
         )
+        change_draw.circle((system.x, system.y), 4, outline=(0xff, 0xff, 0xff, 0xbf))
     table.render(draw, (10, y))
 
     combined = PIL.Image.alpha_composite(sov_layer, sys_layer)
+    combined = PIL.Image.alpha_composite(combined, change_layer)
     combined = PIL.Image.alpha_composite(combined, label_layer)
     combined = PIL.Image.alpha_composite(combined, legend_layer)
     combined = PIL.Image.alpha_composite(bg_layer, combined)
