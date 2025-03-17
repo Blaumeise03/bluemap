@@ -614,6 +614,8 @@ cdef class Owner:
             raise TypeError("npc must be a bool")
         if color is not None and (len(color) < 3 or len(color) > 4):
             raise ValueError("color must be a tuple of 3 or 4 ints")
+        if type(name) is not str and name is not None:
+            raise TypeError("name must be a str or None")
         if name is None:
             name = ""
         if color is not None:
