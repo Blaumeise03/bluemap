@@ -98,7 +98,7 @@ namespace bluemap {
           owner(std::move(owner)) {
     }
 
-    void SolarSystem::add_influence(const std::shared_ptr<Owner>& owner, double value) {
+    void SolarSystem::add_influence(const std::shared_ptr<Owner> &owner, double value) {
         assert(owner != nullptr);
         // Try and find the owner in the influences vector
         for (auto &influence: influences) {
@@ -252,35 +252,39 @@ namespace bluemap {
                                          i < width - 1 && prev_row[i + 1] != prev_row[i];
                 int alpha;
                 Py_Trace_Errors(alpha = static_cast<int>(map->influence_to_alpha(prev_influence[i]));)
-                if (!prev_owner->has_color()) {
-                    Color new_color;
-                    Py_Trace_Errors(new_color = map->generate_owner_color(prev_owner->get_id());)
-                    prev_owner->set_color(new_color);
+                if (!prev_owner->is_npc()) {
+                    if (!prev_owner->has_color()) {
+                        Color new_color;
+                        Py_Trace_Errors(new_color = map->generate_owner_color(prev_owner->get_id());)
+                        prev_owner->set_color(new_color);
+                    }
+                    const auto color = prev_owner->get_color().with_alpha(
+                        draw_border ? std::max(map->border_alpha, alpha) : alpha
+                    );
+                    cache.set_pixel(i, y - row_offset, color);
+                } else {
+                    cache.set_pixel(i, y - row_offset, {0, 0, 0, 0});
                 }
-                const auto color = prev_owner->get_color().with_alpha(
-                    draw_border ? std::max(map->border_alpha, alpha) : alpha
-                );
-                cache.set_pixel(i, y - row_offset, color);
 
                 if (render_old_owners) {
                     if (const auto old_owner_id = map->old_owners_image.get()[x + y * map->get_width()];
                         old_owner_id != 0 && old_owner_id != prev_owner->get_id()
                     ) {
                         const auto old_owner = map->owners[old_owner_id];
-                        Color old_color = {255, 255, 255};
-                        if (old_owner != nullptr) {
+                        if (old_owner != nullptr && !old_owner->is_npc()) {
+                            Color old_color = {255, 255, 255};
                             if (!old_owner->has_color()) {
                                 Color new_color;
                                 Py_Trace_Errors(new_color = map->generate_owner_color(old_owner->get_id());)
                                 old_owner->set_color(new_color);
                             }
                             old_color = static_cast<Color>(old_owner->get_color()); // NOLINT(*-slicing)
-                        }
 
-                        if (constexpr int slant = 5;
-                            (y % slant + x) % slant == 0
-                        ) {
-                            cache.set_pixel(i, y - row_offset, old_color.with_alpha(alpha));
+                            if (constexpr int slant = 5;
+                                (y % slant + x) % slant == 0
+                            ) {
+                                cache.set_pixel(i, y - row_offset, old_color.with_alpha(alpha));
+                            }
                         }
                     }
                 }
@@ -600,6 +604,9 @@ namespace bluemap {
                 if (owner == nullptr) {
                     continue;
                 }
+                if (owner->is_npc()) {
+                    continue;
+                }
                 auto label = MapOwnerLabel{owner->get_id()};
                 owner_flood_fill(x, y, label);
                 label.x = label.x / label.count + sample_rate / 2;
@@ -799,7 +806,8 @@ namespace bluemap {
         generate_owner_color_pyfunc = std::make_unique<py::Callable<std::tuple<int, int, int>, id_t> >(pyfunc);
         if (!generate_owner_color_pyfunc->validate()) {
             generate_owner_color_pyfunc = nullptr;
-            throw std::runtime_error("Invalid callable, expected a function with signature (int) -> tuple[int, int, int]");
+            throw std::runtime_error(
+                "Invalid callable, expected a function with signature (int) -> tuple[int, int, int]");
         }
         generate_owner_color = [this](const id_t owner_id) {
             std::tuple<int, int, int> color;

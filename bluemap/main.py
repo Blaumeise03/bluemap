@@ -77,7 +77,8 @@ def _create_tables(connection):
             (
                 id    INT PRIMARY  KEY,
                 color VARCHAR(7)   NULL,
-                name  VARCHAR(255) NULL
+                name  VARCHAR(255) NULL,
+                npc   TINYINT(1)   NOT NULL DEFAULT 0
             )
             """)
         cursor.execute(
@@ -146,7 +147,7 @@ def load_data_from_db(
     try:
         with connection.cursor() as cursor:
             # Load owners (alliances)
-            cursor.execute("SELECT id, color, name FROM evealliances")
+            cursor.execute("SELECT id, color, name, npc FROM evealliances")
             owners = []
             for row in cursor.fetchall():  # type: dict[str, Any]
                 if row['color'] is not None:
@@ -158,7 +159,7 @@ def load_data_from_db(
                     'id': row['id'],
                     'color': color,
                     'name': row['name'],
-                    'npc': False,
+                    'npc': True if row.get('npc', False) else False,
                 })
 
             # Load systems

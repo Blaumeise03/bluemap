@@ -605,7 +605,7 @@ cdef class Owner:
 
     def __init__(self,
                  id_: int,
-                 name: str,
+                 name: str | None,
                  color: tuple[int, int, int] | tuple[int, int, int, int] | None,
                  npc: bool):
         if type(id_) is not int:
@@ -614,6 +614,8 @@ cdef class Owner:
             raise TypeError("npc must be a bool")
         if color is not None and (len(color) < 3 or len(color) > 4):
             raise ValueError("color must be a tuple of 3 or 4 ints")
+        if name is None:
+            name = ""
         if color is not None:
             self.c_data = shared_ptr[COwner](new COwner(
                 id_, name.encode("utf-8"), color[0], color[1], color[2], npc))
@@ -1465,21 +1467,25 @@ cdef class SovMap:
                 color = self.color_jump_r
             draw.line((x1, y1, x2, y2), fill=color)
         cdef Owner owner
+        cdef cbool has_owner
         for system in self._systems.values():
             x = system.c_data.get().get_x()
             y = system.c_data.get().get_y()
             color = self.color_sys_no_sov
-            if system.c_data.get().get_owner() != NULL:
+            has_owner = system.c_data.get().get_owner() != NULL
+            if has_owner:
                 owner = self._owners.get(system.c_data.get().get_owner().get_id(), None)
-                if owner is not None:
+                if owner is not None and not owner.c_data.get().is_npc():
                     if owner.color is None:
                         owner.color = self.next_color(owner.id)
                     color = owner.color
+                else:
+                    has_owner = False
 
-            if system.c_data.get().get_sov_power() >= 6.0:
+            if has_owner and system.c_data.get().get_sov_power() >= 6.0:
                 draw.rectangle((x - 2, y, x, y), fill=color)
                 draw.rectangle((x - 2, y - 2, x + 2, y + 2), outline=color)
-            elif system.c_data.get().get_owner() != NULL:
+            elif has_owner and system.c_data.get().get_owner() != NULL:
                 draw.rectangle((x - 2, y, x, y), fill=color)
                 draw.rectangle((x - 1, y - 1, x + 1, y + 1), fill=color)
             else:
