@@ -394,6 +394,10 @@ cdef class ColumnWorker:
 cdef class SolarSystem:
     cdef shared_ptr[CSolarSystem] c_data
     cdef str c_name
+    cdef object _real_x
+    cdef object _real_y
+    cdef object _real_z
+
 
     def __init__(self, id_: int, constellation_id: int, region_id: int, x: int, y: int, has_station: bool,
                  sov_power: float, owner: Owner | None):
@@ -423,6 +427,9 @@ cdef class SolarSystem:
         self.c_data = shared_ptr[CSolarSystem](new CSolarSystem(id__,constellation_id_, region_id_, x_, y_,
             has_station_, sov_power_, owner_))
         self.c_name = str(id_)
+        self._real_x = None
+        self._real_y = None
+        self._real_z = None
 
     def get_influences(self) -> dict[int, float]:
         cdef vector[OwnerInfluenceTuple] influences = self.c_data.get().get_influences()
@@ -448,34 +455,58 @@ cdef class SolarSystem:
         return self.c_data.get().get_region_id()
 
     @property
-    def x(self):
+    def x(self) -> int:
         return self.c_data.get().get_x()
 
     @property
-    def y(self):
+    def y(self) -> int:
         return self.c_data.get().get_y()
 
     @property
-    def has_station(self):
+    def has_station(self) -> bool:
         return self.c_data.get().is_has_station()
 
     @property
-    def sov_power(self):
+    def sov_power(self) -> float:
         return self.c_data.get().get_sov_power()
 
     @property
-    def owner_id(self):
+    def owner_id(self) -> int | None:
         if self.c_data.get().get_owner() == NULL:
             return None
         return self.c_data.get().get_owner().get_id()
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.c_name
 
     @name.setter
     def name(self, value: str):
         self.c_name = value
+
+    @property
+    def real_x(self) -> int:
+        return self._real_x
+
+    @real_x.setter
+    def real_x(self, value: int):
+        self._real_x = value
+
+    @property
+    def real_y(self) -> int | None:
+        return self._real_y
+
+    @real_y.setter
+    def real_y(self, value: int | None):
+        self._real_y = value
+
+    @property
+    def real_z(self) -> int:
+        return self._real_z
+
+    @real_z.setter
+    def real_z(self, value: int):
+        self._real_z = value
 
 cdef class Constellation:
     cdef id_t c_id
@@ -509,7 +540,10 @@ cdef class Region:
     cdef id_t c_id
     cdef int c_x
     cdef int c_y
-    cdef str  c_name
+    cdef str c_name
+    cdef object _real_x
+    cdef object _real_y
+    cdef object _real_z
 
     def __init__(self, id_: int):
         if type(id_) is not int:
@@ -518,6 +552,9 @@ cdef class Region:
         self.c_name = str(id_)
         self.c_x = 0
         self.c_y = 0
+        self._real_x = None
+        self._real_y = None
+        self._real_z = None
 
     @property
     def id(self):
@@ -538,6 +575,30 @@ cdef class Region:
     @name.setter
     def name(self, value: str):
         self.c_name = value
+
+    @property
+    def real_x(self) -> int:
+        return self._real_x
+
+    @real_x.setter
+    def real_x(self, value: int):
+        self._real_x = value
+
+    @property
+    def real_y(self) -> int | None:
+        return self._real_y
+
+    @real_y.setter
+    def real_y(self, value: int | None):
+        self._real_y = value
+
+    @property
+    def real_z(self) -> int:
+        return self._real_z
+
+    @real_z.setter
+    def real_z(self, value: int):
+        self._real_z = value
 
 cdef class Owner:
     cdef shared_ptr[COwner] c_data
@@ -825,8 +886,8 @@ cdef class SovMap:
     _owners: dict[int, Owner]
     _systems: dict[int, SolarSystem]
     _connections: list[tuple[int, int]]
-    constellations: dict[int, Constellation]
-    regions: dict[int, Region]
+    cdef dict[int, Constellation] constellations
+    cdef public dict[int, Region] regions
 
     cdef vector[CMap.CMapOwnerLabel] owner_labels
     cdef ColorGenerator _color_generator
@@ -1082,6 +1143,10 @@ cdef class SovMap:
                 has_station=system['has_station'],
                 sov_power=system['sov_power'],
                 owner=owner_obj)
+            system_obj.real_x = int(system['x'])
+            system_obj.real_z = int(system['z'])
+            if system.get('y', None) is not None:
+                system_obj.real_y = int(system.get('y', None))
             # noinspection PyTypeChecker
             self._systems[system_obj.id] = system_obj
             # noinspection PyUnresolvedReferences
@@ -1101,6 +1166,10 @@ cdef class SovMap:
                 region_obj.c_y = int(z)
                 if "name" in region:
                     region_obj.c_name = region["name"]
+                region_obj.real_x = int(region['x'])
+                region_obj.real_z = int(region['z'])
+                if region.get('y', None) is not None:
+                    region_obj.real_y = int(region.get('y', None))
                 self.regions[region_obj.id] = region_obj
 
         for connection in connections:
